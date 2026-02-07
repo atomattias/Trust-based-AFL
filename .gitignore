@@ -1,0 +1,43 @@
+# Tutorial folder
+Tutorials/
+tutorials/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# Results and generated files
+results/models/
+results/trust_history/
+*.png
+*.pdf
+*.json
+!config/*.json
+!requirements.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data files (large - exclude all CSV files)
+data/CSVs/**/*.csv
+data/CSVs/*.csv
+data/CSVs.zip
+!data/CSVs/.gitkeep
+
+# Logs
+*.log

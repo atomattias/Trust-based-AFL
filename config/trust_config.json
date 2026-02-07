@@ -1,0 +1,21 @@
+{
+  "trust_manager": {
+    "alpha": 0.7,
+    "decay_rate": 0.95,
+    "anomaly_threshold": 0.2,
+    "initial_trust": 0.5,
+    "storage_dir": "results/trust_history"
+  },
+  "consistency": {
+    "window_size": 5
+  },
+  "trend_analysis": {
+    "window_size": 5,
+    "improving_threshold": 0.01,
+    "declining_threshold": -0.01
+  },
+  "logging": {
+    "level": "INFO",
+    "log_file": "results/trust_updates.log"
+  }
+}

@@ -1,0 +1,449 @@
+"""
+Federated client module representing a honeypot node.
+
+Each client trains a local model and computes its trust score.
+"""
+
+import pandas as pd
+import numpy as np
+from pathlib import Path
+from typing import Dict, Any, Optional, List
+from preprocessing import load_client_data, prepare_labels, split_data, prepare_features
+from local_training import train_local_model, evaluate_model, get_model_parameters
+
+
+class FederatedClient:
+    """
+    Represents a single federated learning client (honeypot).
+    
+    Each client:
+    1. Loads its own data
+    2. Trains a local model
+    3. Evaluates the model to compute trust score
+    4. Provides model parameters for aggregation
+    """
+    
+    def __init__(
+        self,
+        client_id: str,
+        data_path: str,
+        model_type: str = 'random_forest',
+        random_state: int = 42,
+        client_quality: str = 'unknown',
+        clean_validation_source: Optional[str] = None
+    ):
+        """
+        Initialize a federated client.
+        
+        Args:
+            client_id: Unique identifier for this client
+            data_path: Path to the client's CSV data file (may be corrupted)
+            model_type: Type of model to train ('random_forest' or 'logistic_regression')
+            random_state: Random seed for reproducibility
+            client_quality: Quality tier ('high', 'medium', 'low', 'compromised', 'unknown')
+            clean_validation_source: Optional path to clean source file for validation (if None, uses data_path)
+        """
+        self.client_id = client_id
+        self.data_path = data_path
+        self.model_type = model_type
+        self.random_state = random_state
+        self.client_quality = client_quality
+        self.clean_validation_source = clean_validation_source
+        
+        # Will be set after training
+        self.model = None
+        self.trust_score = None
+        self.train_metrics = None
+        self.val_metrics = None
+        
+        # Data splits
+        self.X_train = None
+        self.X_val = None
+        self.y_train = None
+        self.y_val = None
+        self.X_features = None
+        
+        # Performance history for adaptive trust (multi-round mode)
+        self.performance_history: List[Dict[str, Any]] = []
+        self.current_round = 0
+        
+        # Store original data for dynamic trust simulation
+        self.X_train_original = None
+        self.y_train_original = None
+        self.X_val_original = None
+        self.y_val_original = None
+    
+    def load_data(self) -> None:
+        """Load and preprocess client data."""
+        # Load CSV (may be corrupted for compromised clients)
+        df = load_client_data(self.data_path)
+        
+        # Prepare labels
+        df = prepare_labels(df)
+        
+        # Prepare features
+        X = prepare_features(df)
+        y = df['label']
+        
+        # Split into train and validation
+        self.X_train, self.X_val, self.y_train, self.y_val = split_data(
+            X, y, test_size=0.2, random_state=self.random_state
+        )
+        
+        # CRITICAL FIX: Use clean validation set for trust calculation
+        # If clean_validation_source is provided, load clean data for validation
+        # This ensures trust scores reflect actual client quality
+        if self.clean_validation_source is not None:
+            try:
+                # Load clean source data
+                df_clean = load_client_data(self.clean_validation_source)
+                df_clean = prepare_labels(df_clean)
+                X_clean = prepare_features(df_clean)
+                y_clean = df_clean['label']
+                
+                # Split clean data (same random_state for consistent split)
+                _, X_val_clean, _, y_val_clean = split_data(
+                    X_clean, y_clean, test_size=0.2, random_state=self.random_state
+                )
+                
+                # Use clean validation set for trust calculation
+                self.X_val = X_val_clean
+                self.y_val = y_val_clean
+                
+                print(f"\n  ✅ CLEAN VALIDATION: {self.client_id} using clean validation from {Path(self.clean_validation_source).name}")
+                print(f"     This ensures trust scores reflect actual client quality!")
+            except Exception as e:
+                print(f"  ⚠️  Warning: Could not load clean validation set for {self.client_id}: {e}")
+                print(f"     Using corrupted validation set (trust may be inaccurate)")
+        
+        # Store original data for dynamic trust simulation
+        self.X_train_original = self.X_train.copy()
+        self.y_train_original = self.y_train.copy()
+        self.X_val_original = self.X_val.copy()
+        self.y_val_original = self.y_val.copy()
+        
+        self.X_features = X
+    
+    def train(self, **model_kwargs) -> Dict[str, float]:
+        """
+        Train the local model on client data.
+        
+        Args:
+            **model_kwargs: Additional arguments for model initialization
+            
+        Returns:
+            Dictionary with training metrics
+        """
+        if self.X_train is None:
+            raise ValueError("Data not loaded. Call load_data() first.")
+        
+        # Train model
+        self.model, self.train_metrics = train_local_model(
+            self.X_train,
+            self.y_train,
+            model_type=self.model_type,
+            random_state=self.random_state,
+            **model_kwargs
+        )
+        
+        return self.train_metrics
+    
+    def evaluate(self) -> Dict[str, Any]:
+        """
+        Evaluate the local model on validation data.
+        
+        Returns:
+            Dictionary with evaluation metrics
+        """
+        if self.model is None:
+            raise ValueError("Model not trained. Call train() first.")
+        
+        self.val_metrics = evaluate_model(self.model, self.X_val, self.y_val)
+        return self.val_metrics
+    
+    def compute_trust(self) -> float:
+        """
+        Compute trust score based on validation accuracy.
+        
+        Trust = Validation Accuracy
+        
+        Returns:
+            Trust score in [0, 1]
+        """
+        if self.val_metrics is None:
+            self.evaluate()
+        
+        # Trust score is validation accuracy
+        self.trust_score = self.val_metrics['accuracy']
+        
+        # Ensure trust score is in valid range
+        self.trust_score = max(0.0, min(1.0, self.trust_score))
+        
+        return self.trust_score
+    
+    def record_round_performance(self, round_num: int) -> None:
+        """
+        Record performance metrics for the current round.
+        
+        Args:
+            round_num: Current round number
+        """
+        if self.val_metrics is None:
+            self.evaluate()
+        
+        self.current_round = round_num
+        
+        # Record performance metrics
+        round_metrics = {
+            'round': round_num,
+            'validation_accuracy': self.val_metrics['accuracy'],
+            'validation_f1': self.val_metrics['f1_score'],
+            'validation_precision': self.val_metrics['precision'],
+            'validation_recall': self.val_metrics['recall'],
+            'false_positive_rate': self.val_metrics.get('false_positive_rate', 0.0),
+            'trust_score': self.trust_score
+        }
+        
+        # Add training metrics if available
+        if self.train_metrics:
+            round_metrics.update({
+                'train_accuracy': self.train_metrics.get('train_accuracy', 0.0),
+                'train_f1': self.train_metrics.get('train_f1', 0.0)
+            })
+        
+        self.performance_history.append(round_metrics)
+    
+    def get_consistency_score(self, window_size: int = 5) -> float:
+        """
+        Calculate consistency score based on variance of recent validation accuracies.
+        Lower variance = higher consistency = more reliable.
+        
+        Args:
+            window_size: Number of recent rounds to consider
+            
+        Returns:
+            Consistency score (1.0 = perfectly consistent, 0.0 = highly variable)
+        """
+        if len(self.performance_history) < 2:
+            return 1.0  # Not enough data
+        
+        # Get recent validation accuracies
+        recent_accuracies = [
+            perf['validation_accuracy'] 
+            for perf in self.performance_history[-window_size:]
+        ]
+        
+        if len(recent_accuracies) < 2:
+            return 1.0
+        
+        # Calculate variance
+        variance = np.var(recent_accuracies)
+        
+        # Convert variance to consistency score (inverse relationship)
+        # Max variance for binary accuracy is 0.25 (when accuracy alternates 0 and 1)
+        consistency = max(0.0, 1.0 - (variance / 0.25))
+        
+        return consistency
+    
+    def get_performance_trend(self, window_size: int = 5) -> str:
+        """
+        Analyze trend in validation accuracy.
+        
+        Args:
+            window_size: Number of recent rounds to consider
+            
+        Returns:
+            'improving', 'declining', or 'stable'
+        """
+        if len(self.performance_history) < 2:
+            return 'stable'
+        
+        # Get recent validation accuracies
+        recent_accuracies = [
+            perf['validation_accuracy'] 
+            for perf in self.performance_history[-window_size:]
+        ]
+        
+        if len(recent_accuracies) < 2:
+            return 'stable'
+        
+        # Simple linear trend
+        x = np.arange(len(recent_accuracies))
+        slope = np.polyfit(x, recent_accuracies, 1)[0]
+        
+        if slope > 0.01:
+            return 'improving'
+        elif slope < -0.01:
+            return 'declining'
+        else:
+            return 'stable'
+    
+    def get_model_update(self, round_num: Optional[int] = None, include_data: bool = True) -> Dict[str, Any]:
+        """
+        Get model parameters and trust score for federated aggregation.
+        
+        Args:
+            round_num: Current round number (optional, for tracking)
+            include_data: If True, include training data for retraining (true FedAvg)
+            
+        Returns:
+            Dictionary with model parameters, trust score, and performance metrics
+        """
+        if self.model is None:
+            raise ValueError("Model not trained. Call train() first.")
+        
+        if self.trust_score is None:
+            self.compute_trust()
+        
+        # Record performance if round number provided
+        if round_num is not None:
+            self.record_round_performance(round_num)
+        
+        # Get model parameters
+        params = get_model_parameters(self.model, self.model_type)
+        
+        # Prepare update dictionary
+        update = {
+            'client_id': self.client_id,
+            'model': self.model,
+            'parameters': params,
+            'trust': self.trust_score,
+            'val_accuracy': self.val_metrics['accuracy'] if self.val_metrics else None,
+            'val_f1': self.val_metrics['f1_score'] if self.val_metrics else None,
+            'round': round_num if round_num is not None else self.current_round
+        }
+        
+        # Include training data for retraining (true FedAvg)
+        if include_data and self.X_train is not None and self.y_train is not None:
+            update['X_train'] = self.X_train
+            update['y_train'] = self.y_train
+        
+        # Add performance history and consistency metrics if available
+        if len(self.performance_history) > 0:
+            update['performance_history'] = self.performance_history
+            update['consistency_score'] = self.get_consistency_score()
+            update['trend'] = self.get_performance_trend()
+            update['num_rounds'] = len(self.performance_history)
+        
+        return update
+    
+    def inject_dynamic_change(
+        self, 
+        round_num: int,
+        change_type: str = 'degrade',
+        severity: float = 0.2
+    ) -> None:
+        """
+        Inject dynamic change into client data to simulate compromise or improvement.
+        
+        This simulates real-world scenarios where:
+        - Clients get compromised mid-training (degradation)
+        - Clients improve their data quality (improvement)
+        
+        Args:
+            round_num: Current round number
+            change_type: 'degrade' (add noise) or 'improve' (reduce noise, restore original)
+            severity: How severe the change is (0.0 to 1.0)
+                     For degrade: proportion of data to corrupt
+                     For improve: proportion of noise to remove
+        """
+        if self.X_train_original is None:
+            return  # Can't inject changes if original data not stored
+        
+        if change_type == 'degrade':
+            # Add additional noise/corruption to simulate compromise
+            import pandas as pd
+            
+            # Ensure we have DataFrames/Series
+            if not isinstance(self.X_train, pd.DataFrame):
+                X_train_df = pd.DataFrame(self.X_train)
+            else:
+                X_train_df = self.X_train.copy()
+            
+            if not isinstance(self.y_train, pd.Series):
+                y_train_df = pd.Series(self.y_train)
+            else:
+                y_train_df = self.y_train.copy()
+            
+            # Add label noise
+            label_noise_ratio = severity * 0.3  # Up to 30% additional label noise
+            if label_noise_ratio > 0:
+                # Flip labels
+                n_flip = int(len(y_train_df) * label_noise_ratio)
+                if n_flip > 0:
+                    flip_indices = np.random.choice(len(y_train_df), size=n_flip, replace=False)
+                    for idx in flip_indices:
+                        y_train_df.iloc[idx] = 1 - y_train_df.iloc[idx]
+            
+            # Add feature corruption
+            feature_corruption_ratio = severity * 0.2  # Up to 20% feature corruption
+            if feature_corruption_ratio > 0:
+                n_corrupt = int(len(X_train_df) * feature_corruption_ratio)
+                if n_corrupt > 0:
+                    corrupt_indices = np.random.choice(len(X_train_df), size=n_corrupt, replace=False)
+                    for idx in corrupt_indices:
+                        # Corrupt random features
+                        n_features = X_train_df.shape[1]
+                        n_features_to_corrupt = max(1, int(n_features * 0.1))
+                        corrupt_feat_indices = np.random.choice(n_features, size=n_features_to_corrupt, replace=False)
+                        for feat_idx in corrupt_feat_indices:
+                            col = X_train_df.columns[feat_idx]
+                            if X_train_df[col].dtype in [np.int64, np.float64]:
+                                noise = np.random.normal(0, X_train_df[col].std() * 2)
+                                X_train_df.iloc[idx, feat_idx] += noise
+            
+            # Update stored data
+            self.X_train = X_train_df
+            self.y_train = y_train_df
+            
+        elif change_type == 'improve':
+            # Restore towards original (simulate data quality improvement)
+            restore_ratio = severity  # How much to restore (0.0 to 1.0)
+            
+            if restore_ratio >= 1.0:
+                # Full restoration
+                self.X_train = self.X_train_original.copy()
+                self.y_train = self.y_train_original.copy()
+            else:
+                # Partial restoration: blend current with original
+                self.X_train = (
+                    (1 - restore_ratio) * self.X_train + 
+                    restore_ratio * self.X_train_original
+                )
+                # For labels, restore a portion
+                restore_indices = np.random.choice(
+                    len(self.y_train), 
+                    size=int(len(self.y_train) * restore_ratio), 
+                    replace=False
+                )
+                self.y_train = self.y_train.copy()
+                self.y_train.iloc[restore_indices] = self.y_train_original.iloc[restore_indices]
+    
+    def get_info(self) -> Dict[str, Any]:
+        """
+        Get information about this client.
+        
+        Returns:
+            Dictionary with client information
+        """
+        info = {
+            'client_id': self.client_id,
+            'data_path': self.data_path,
+            'model_type': self.model_type,
+            'trust_score': self.trust_score
+        }
+        
+        if self.X_train is not None:
+            info['train_samples'] = len(self.X_train)
+            info['val_samples'] = len(self.X_val)
+            info['n_features'] = self.X_train.shape[1]
+            info['train_benign_ratio'] = (self.y_train == 0).sum() / len(self.y_train)
+            info['val_benign_ratio'] = (self.y_val == 0).sum() / len(self.y_val)
+        
+        if self.train_metrics:
+            info.update({f'train_{k}': v for k, v in self.train_metrics.items()})
+        
+        if self.val_metrics:
+            info.update({f'val_{k}': v for k, v in self.val_metrics.items()})
+        
+        return info
