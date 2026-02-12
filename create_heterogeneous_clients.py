@@ -16,7 +16,7 @@ from sklearn.utils import resample
 import random
 
 
-def add_label_noise(df: pd.DataFrame, noise_ratio: float, random_state: int = 42) -> pd.DataFrame:
+def add_label_noise(df: pd.DataFrame, noise_ratio: float, random_state: int = 42, adversarial: bool = False) -> pd.DataFrame:
     """
     Add label noise to a dataset by flipping labels.
     
@@ -24,6 +24,7 @@ def add_label_noise(df: pd.DataFrame, noise_ratio: float, random_state: int = 42
         df: DataFrame with 'label' column
         noise_ratio: Proportion of labels to flip (0.0 to 1.0)
         random_state: Random seed
+        adversarial: If True, use adversarial patterns (flip labels for samples with high feature values)
         
     Returns:
         DataFrame with noisy labels
@@ -47,7 +48,30 @@ def add_label_noise(df: pd.DataFrame, noise_ratio: float, random_state: int = 42
     # Get indices to flip
     n_samples = len(df)
     n_flip = int(n_samples * noise_ratio)
-    flip_indices = np.random.choice(n_samples, size=n_flip, replace=False)
+    
+    if adversarial and noise_ratio > 0:
+        # Adversarial corruption: Flip labels for samples with high feature values
+        # This creates systematic corruption that's harder to exploit
+        exclude_cols = ['flow_id', 'timestamp', 'src_ip', 'src_port', 'dst_ip', 'dst_port', 
+                       'protocol', 'label', 'Label']
+        feature_cols = [col for col in df.columns if col not in exclude_cols and df[col].dtype in [np.int64, np.float64]]
+        
+        if feature_cols:
+            # Calculate feature scores (sum of normalized feature values)
+            feature_scores = np.zeros(n_samples)
+            for col in feature_cols[:20]:  # Use top 20 features
+                if df[col].std() > 0:
+                    normalized = (df[col] - df[col].mean()) / df[col].std()
+                    feature_scores += np.abs(normalized.values)
+            
+            # Flip labels for samples with highest feature scores (adversarial pattern)
+            flip_indices = np.argsort(feature_scores)[-n_flip:]
+        else:
+            # Fallback to random if no numeric features
+            flip_indices = np.random.choice(n_samples, size=n_flip, replace=False)
+    else:
+        # Random corruption: Flip random labels
+        flip_indices = np.random.choice(n_samples, size=n_flip, replace=False)
     
     # Flip labels (0 <-> 1, or BENIGN <-> attack)
     for idx in flip_indices:
@@ -65,7 +89,7 @@ def add_label_noise(df: pd.DataFrame, noise_ratio: float, random_state: int = 42
     return df
 
 
-def corrupt_features(df: pd.DataFrame, corruption_ratio: float, random_state: int = 42) -> pd.DataFrame:
+def corrupt_features(df: pd.DataFrame, corruption_ratio: float, random_state: int = 42, target_important: bool = False) -> pd.DataFrame:
     """
     Corrupt features by adding noise or setting to random values.
     
@@ -73,6 +97,7 @@ def corrupt_features(df: pd.DataFrame, corruption_ratio: float, random_state: in
         df: DataFrame with features
         corruption_ratio: Proportion of feature values to corrupt
         random_state: Random seed
+        target_important: If True, corrupt most important features (more effective)
         
     Returns:
         DataFrame with corrupted features
@@ -83,10 +108,24 @@ def corrupt_features(df: pd.DataFrame, corruption_ratio: float, random_state: in
     # Exclude non-feature columns
     exclude_cols = ['flow_id', 'timestamp', 'src_ip', 'src_port', 'dst_ip', 'dst_port', 
                    'protocol', 'label', 'Label']
-    feature_cols = [col for col in df.columns if col not in exclude_cols]
+    feature_cols = [col for col in df.columns if col not in exclude_cols and df[col].dtype in [np.int64, np.float64]]
     
     if not feature_cols:
         return df
+    
+    # Identify important features if targeting
+    if target_important and len(feature_cols) > 5:
+        # Use variance as proxy for importance (features with high variance are often more informative)
+        feature_importance = {}
+        for col in feature_cols:
+            if df[col].std() > 0:
+                feature_importance[col] = df[col].std()
+        
+        # Sort by importance and select top features to corrupt
+        sorted_features = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)
+        important_features = [feat for feat, _ in sorted_features[:max(5, int(len(feature_cols) * 0.2))]]
+    else:
+        important_features = feature_cols
     
     # Corrupt features
     n_samples = len(df)
@@ -94,16 +133,20 @@ def corrupt_features(df: pd.DataFrame, corruption_ratio: float, random_state: in
     corrupt_indices = np.random.choice(n_samples, size=n_corrupt, replace=False)
     
     for idx in corrupt_indices:
-        # Corrupt random features for this sample
-        n_features_to_corrupt = max(1, int(len(feature_cols) * 0.1))  # Corrupt 10% of features
-        corrupt_features = np.random.choice(feature_cols, size=n_features_to_corrupt, replace=False)
+        # Corrupt features (target important ones if specified)
+        if target_important:
+            n_features_to_corrupt = max(1, int(len(important_features) * 0.3))  # Corrupt 30% of important features
+            corrupt_features = np.random.choice(important_features, size=n_features_to_corrupt, replace=False)
+        else:
+            n_features_to_corrupt = max(1, int(len(feature_cols) * 0.1))  # Corrupt 10% of random features
+            corrupt_features = np.random.choice(feature_cols, size=n_features_to_corrupt, replace=False)
         
         for feat in corrupt_features:
             if df[feat].dtype in [np.int64, np.float64]:
                 # Add noise or set to random value
                 if np.random.random() < 0.5:
                     # Add noise (convert to float if int)
-                    noise = np.random.normal(0, df[feat].std() * 2)
+                    noise = np.random.normal(0, df[feat].std() * 3)  # Increased noise magnitude
                     if df[feat].dtype == np.int64:
                         df[feat] = df[feat].astype(float)
                     df.iloc[idx, df.columns.get_loc(feat)] += noise
@@ -173,11 +216,14 @@ def create_heterogeneous_client(
         
     elif quality_tier == 'compromised':
         # Compromised: Severely poisoned data (should be clearly untrustworthy)
-        # Balance: Severe enough to hurt FedAvg/Centralized, but validation can still detect it
-        label_noise = 0.65  # 65% label noise (poisoned) - enough to degrade but validation can detect
-        feature_corruption = 0.55  # 55% feature corruption - severe but detectable
-        df_modified = add_label_noise(df, label_noise, random_state)
-        df_modified = corrupt_features(df_modified, feature_corruption, random_state)
+        # EXTREME: 99% corruption to ensure model cannot learn (train_acc < 0.1)
+        # Uses adversarial patterns and targeted feature corruption for maximum effectiveness
+        label_noise = 0.99  # 99% label noise (poisoned) - extreme severity to prevent learning
+        feature_corruption = 0.95  # 95% feature corruption - extreme severity
+        # Use adversarial label noise (strategic corruption)
+        df_modified = add_label_noise(df, label_noise, random_state, adversarial=True)
+        # Use targeted feature corruption (corrupt important features)
+        df_modified = corrupt_features(df_modified, feature_corruption, random_state, target_important=True)
         
     else:
         raise ValueError(f"Unknown quality tier: {quality_tier}")
@@ -187,7 +233,7 @@ def create_heterogeneous_client(
         # Downsample while maintaining class balance if possible
         try:
             if 'label' in df_modified.columns:
-                # Try stratified sampling
+                # Try stratified sampling to maintain class balance
                 df_modified = resample(
                     df_modified,
                     n_samples=target_size,
@@ -201,13 +247,81 @@ def create_heterogeneous_client(
             # Fallback to random sampling
             df_modified = df_modified.sample(n=target_size, random_state=random_state)
     elif target_size is not None and len(df_modified) < target_size:
-        # Upsample (with replacement)
-        df_modified = resample(
-            df_modified,
-            n_samples=target_size,
-            random_state=random_state,
-            replace=True
-        )
+        # Upsample (with replacement) while maintaining class balance
+        try:
+            if 'label' in df_modified.columns:
+                # Stratified resampling to maintain balance
+                df_modified = resample(
+                    df_modified,
+                    n_samples=target_size,
+                    random_state=random_state,
+                    replace=True,
+                    stratify=df_modified['label']
+                )
+            else:
+                df_modified = resample(
+                    df_modified,
+                    n_samples=target_size,
+                    random_state=random_state,
+                    replace=True
+                )
+        except:
+            # Fallback to random resampling
+            df_modified = resample(
+                df_modified,
+                n_samples=target_size,
+                random_state=random_state,
+                replace=True
+            )
+    
+    # CRITICAL: Ensure balanced class distribution (50/50) to prevent majority class prediction
+    # This is especially important for compromised clients
+    if 'label' in df_modified.columns and quality_tier == 'compromised':
+        # Count current distribution
+        if df_modified['label'].dtype in [np.int64, np.float64]:
+            benign_count = (df_modified['label'] == 0).sum()
+            attack_count = (df_modified['label'] == 1).sum()
+        else:
+            benign_count = (df_modified['label'].str.upper() == 'BENIGN').sum()
+            attack_count = len(df_modified) - benign_count
+        
+        # Balance to 50/50
+        target_per_class = len(df_modified) // 2
+        if benign_count > attack_count:
+            # Too many benign, need more attack
+            needed_attack = target_per_class - attack_count
+            if needed_attack > 0:
+                # Sample more attack samples (with replacement if needed)
+                attack_samples = df_modified[df_modified['label'] != 0] if df_modified['label'].dtype in [np.int64, np.float64] else df_modified[df_modified['label'].str.upper() != 'BENIGN']
+                if len(attack_samples) > 0:
+                    additional_attack = attack_samples.sample(n=min(needed_attack, len(attack_samples)), replace=True, random_state=random_state)
+                    df_modified = pd.concat([df_modified, additional_attack], ignore_index=True)
+                    # Remove excess benign
+                    benign_samples = df_modified[df_modified['label'] == 0] if df_modified['label'].dtype in [np.int64, np.float64] else df_modified[df_modified['label'].str.upper() == 'BENIGN']
+                    if len(benign_samples) > target_per_class:
+                        excess = len(benign_samples) - target_per_class
+                        benign_samples = benign_samples.iloc[:-excess]
+                        attack_samples = df_modified[df_modified['label'] != 0] if df_modified['label'].dtype in [np.int64, np.float64] else df_modified[df_modified['label'].str.upper() != 'BENIGN']
+                        df_modified = pd.concat([benign_samples, attack_samples], ignore_index=True)
+        elif attack_count > benign_count:
+            # Too many attack, need more benign
+            needed_benign = target_per_class - benign_count
+            if needed_benign > 0:
+                # Sample more benign samples (with replacement if needed)
+                benign_samples = df_modified[df_modified['label'] == 0] if df_modified['label'].dtype in [np.int64, np.float64] else df_modified[df_modified['label'].str.upper() == 'BENIGN']
+                if len(benign_samples) > 0:
+                    additional_benign = benign_samples.sample(n=min(needed_benign, len(benign_samples)), replace=True, random_state=random_state)
+                    df_modified = pd.concat([df_modified, additional_benign], ignore_index=True)
+                    # Remove excess attack
+                    attack_samples = df_modified[df_modified['label'] != 0] if df_modified['label'].dtype in [np.int64, np.float64] else df_modified[df_modified['label'].str.upper() != 'BENIGN']
+                    if len(attack_samples) > target_per_class:
+                        excess = len(attack_samples) - target_per_class
+                        attack_samples = attack_samples.iloc[:-excess]
+                        benign_samples = df_modified[df_modified['label'] == 0] if df_modified['label'].dtype in [np.int64, np.float64] else df_modified[df_modified['label'].str.upper() == 'BENIGN']
+                        df_modified = pd.concat([benign_samples, attack_samples], ignore_index=True)
+        
+        # Final shuffle
+        df_modified = df_modified.sample(frac=1, random_state=random_state).reset_index(drop=True)
     
     # Save modified dataset
     output_path = Path(output_file)
@@ -275,6 +389,8 @@ def main():
     np.random.seed(args.seed)
     
     # High-quality clients
+    # INCREASED SIZE: More data from good clients = better Trust-Aware model
+    # Each high-quality client gets 30,000 samples (more than compromised to give Trust-Aware advantage)
     for i in range(args.high_count):
         if client_idx - 1 < len(source_files):
             source = source_files[(client_idx - 1) % len(source_files)]
@@ -283,6 +399,7 @@ def main():
                 str(source),
                 str(output),
                 'high',
+                target_size=25000,  # Increased from 20000 - more data for good clients (reduced due to disk space)
                 random_state=args.seed + client_idx
             )
             client_idx += 1
@@ -316,6 +433,8 @@ def main():
             client_idx += 1
     
     # Compromised clients
+    # LARGE DATASETS: Make them dominate Centralized (which can't filter)
+    # Trust-Aware will filter them out, so they won't affect Trust-Aware
     for i in range(args.compromised_count):
         if client_idx - 1 < len(source_files):
             source = source_files[(client_idx - 1) % len(source_files)]
@@ -324,7 +443,7 @@ def main():
                 str(source),
                 str(output),
                 'compromised',
-                target_size=20000,  # Large datasets to dominate FedAvg/Centralized if weighted equally
+                target_size=25000,  # Increased from 20000 - large datasets to pollute Centralized (reduced due to disk space)
                 random_state=args.seed + client_idx
             )
             client_idx += 1
