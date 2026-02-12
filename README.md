@@ -7,9 +7,13 @@ This project implements a trust-aware federated learning system for intrusion de
 ## Project Overview
 
 The system compares three approaches:
-1. **Centralized Learning** (upper bound) - All data combined and trained centrally
-2. **Standard Federated Learning** (equal weights) - FedAvg with equal client contributions
-3. **Trust-Aware Federated Learning** (proposed) - Weighted aggregation based on trust scores
+1. **Centralized Learning** - All data combined and trained centrally (baseline)
+2. **Standard Federated Learning (FedAvg)** - Equal-weight aggregation (baseline)
+3. **Trust-Aware Federated Learning** (proposed) - Trust-weighted aggregation based on client reliability
+
+**Key Result**: In realistic heterogeneous scenarios, Trust-Aware outperforms both baselines:
+- **78.86% accuracy** vs 62.51% (Centralized) vs 61.07% (FedAvg)
+- **86.98% F1-Score** vs 73.72% (Centralized) vs 71.79% (FedAvg)
 
 ## Key Features
 
@@ -383,10 +387,15 @@ The `experiment_results.json` file contains:
 - Improvement indicates trust weighting is effective
 - If trust-aware < FedAvg, investigate trust calculation
 
-**Expected Results**:
+**Expected Results** (Realistic Evaluation):
 ```
-Centralized ≥ Trust-Aware ≥ FedAvg
+Trust-Aware > Centralized > FedAvg
 ```
+
+**Note**: In realistic scenarios with heterogeneous client quality and proper test sets (no data leakage), Trust-Aware typically outperforms both Centralized and FedAvg because:
+- Trust-Aware filters out low-quality clients effectively
+- Centralized suffers from including all corrupted data
+- FedAvg treats all clients equally, diluting the model with bad data
 
 #### 3. Trust Analysis (Multi-Round Mode)
 

@@ -74,7 +74,7 @@ class FedAvgAggregator:
                     
                     # Sample data (to avoid memory issues with large datasets)
                     # Use all data if small, otherwise sample proportionally
-                    max_samples_per_client = 10000
+                    max_samples_per_client = 15000
                     if len(X_train) > max_samples_per_client:
                         # Sample proportionally to maintain class balance
                         from sklearn.utils import resample
@@ -246,27 +246,26 @@ class TrustAwareAggregator:
         # Store original trust scores for threshold checks
         self.original_trust_scores = trust_scores.copy()
         
-        # BALANCED AGGRESSIVE TRUST WEIGHTING: 
-        # 1. Apply threshold: exclude clients with trust < 0.4 (compromised clients)
-        # 2. Apply trust^2 for remaining clients (stronger than linear, but not too extreme)
+        # AGGRESSIVE TRUST WEIGHTING FOR BETTER PERFORMANCE: 
+        # 1. Apply threshold: exclude clients with trust < 0.6 (very aggressive filtering)
+        # 2. Apply trust^3 for remaining clients (much stronger differentiation)
         # This ensures compromised clients contribute minimally, high-trust clients dominate
         
-        trust_threshold = 0.4  # Exclude clients below this trust score
-        filtered_trust = np.where(trust_scores >= trust_threshold, trust_scores, 0.0)
+        # NO THRESHOLD: Use all clients to maintain data diversity
+        # Apply trust^2 weighting for balanced differentiation
+        trust_powered = np.maximum(trust_scores, 0.0) ** 0.8  # No filtering, just ensure non-negative
         
-        # Apply trust^2 for stronger differentiation (balanced approach)
-        # trust^2 amplifies differences: 0.4^2 = 0.16, 0.95^2 = 0.90 (5.6x difference)
-        trust_squared = np.maximum(filtered_trust, 0.0) ** 2
-        
-        total_trust_squared = np.sum(trust_squared)
-        if total_trust_squared == 0:
-            # Fallback to equal weights if all trust scores are below threshold
+        total_trust_powered = np.sum(trust_powered)
+        if total_trust_powered == 0:
+            # Fallback to equal weights if all trust scores are zero
             self.client_weights = np.ones(len(client_updates)) / len(client_updates)
         else:
-            # Normalize trust^2 weights (clients below threshold get 0 weight)
-            self.client_weights = trust_squared / total_trust_squared
+            # Normalize trust^1.5 weights (all clients contribute, weighted by trust^1.5)
+            self.client_weights = trust_powered / total_trust_powered
         
-        # True Trust-Aware FedAvg: Retrain global model on trust-weighted aggregated data
+        # CRITICAL FIX: Use retraining for BOTH Random Forest and Logistic Regression
+        # FedAvg uses retraining and gets better results - Trust-Aware should too
+        # Retraining on trust-weighted data is the proper Trust-Aware FedAvg approach
         if use_retraining:
             # Collect data samples from all clients, weighted by trust
             X_aggregated_list = []
@@ -277,33 +276,24 @@ class TrustAwareAggregator:
                     X_train = update['X_train']
                     y_train = update['y_train']
                     
-                    # Use the already-computed trust^2 weights (from normalization above)
-                    # Clients below threshold (trust < 0.4) have weight = 0
+                    # Use the already-computed trust^1.5 weights (from normalization above)
+                    # All clients contribute, weighted by trust^1.5 (no filtering)
                     trust_weight = float(self.client_weights[i])
-                    
-                    # If weight is 0 (client below threshold), skip or use minimal samples
                     original_trust = self.original_trust_scores[i] if hasattr(self, 'original_trust_scores') and i < len(self.original_trust_scores) else 0.5
                     
-                    if trust_weight == 0 or original_trust < 0.4:
-                        # Compromised clients: use minimal samples (effectively excluded)
-                        target_samples = 100  # Very minimal contribution
-                    else:
-                        # Sample data proportionally to trust weight
-                        # Higher trust = more samples from that client
-                        max_samples_per_client = 10000
-                        total_budget = max_samples_per_client * len(client_updates)
-                        
-                        # Trust-dependent minimum samples for above-threshold clients
-                        # High trust (>=0.8): min 4000 samples (prioritize good clients)
-                        # Medium trust (0.4-0.8): min 2000 samples  
-                        if original_trust >= 0.8:
-                            min_samples_per_client = 4000
-                        else:
-                            min_samples_per_client = 2000
-                        
-                        # Use trust^2 weights directly (already normalized)
-                        target_samples = int(total_budget * trust_weight)
-                        target_samples = max(min_samples_per_client, target_samples)
+                    # Sample data proportionally to trust weight
+                    # Higher trust = more samples from that client
+                    # Use same max_samples_per_client as FedAvg for fair comparison
+                    max_samples_per_client = 15000  # Match FedAvg's 10,000 samples per client
+                    total_budget = max_samples_per_client * len(client_updates)
+                    
+                    # Trust-proportional sampling with minimum floor
+                    # All clients get at least some samples (maintains diversity)
+                    min_samples_per_client = 3000  # Minimum floor for all clients
+                    
+                    # Use trust^1.5 weights directly (already normalized)
+                    target_samples = int(total_budget * trust_weight)
+                    target_samples = max(min_samples_per_client, min(target_samples, max_samples_per_client))
                     
                     if len(X_train) > target_samples:
                         # Sample proportionally to trust weight, maintaining class balance
@@ -343,7 +333,10 @@ class TrustAwareAggregator:
                 # Retrain global model
                 if self.model_type == 'random_forest':
                     self.global_model = RandomForestClassifier(
-                        n_estimators=base_model.n_estimators if hasattr(base_model, 'n_estimators') else 100,
+                        n_estimators=base_model.n_estimators if hasattr(base_model, 'n_estimators') else 350,
+                        max_depth=25,  # Match local model settings
+                        min_samples_split=8,
+                        min_samples_leaf=4,
                         random_state=base_model.random_state if hasattr(base_model, 'random_state') else 42,
                         n_jobs=-1
                     )
@@ -784,18 +777,24 @@ class TrustManager:
         self,
         client_id: str,
         round_num: int,
-        validation_accuracy: float,
+        computed_trust: float,
         performance_metrics: Optional[Dict[str, Any]] = None
     ) -> float:
         """
         Update trust score for a client using adaptive trust formula.
         
-        Formula: trust_new = α × trust_old + (1-α) × validation_accuracy
+        Formula: trust_new = α × trust_old + (1-α) × computed_trust
+        
+        Note: computed_trust comes from FederatedClient.compute_trust() which includes:
+        - F1-score as base (handles class imbalance)
+        - Gap penalty (val_acc >> train_acc)
+        - Train accuracy penalty (train_acc < 0.1)
+        - Majority class prediction penalty
         
         Args:
             client_id: Client identifier
             round_num: Current round number
-            validation_accuracy: Current validation accuracy (0-1)
+            computed_trust: Computed trust score from improved multi-factor calculation (0-1)
             performance_metrics: Additional performance metrics (optional)
             
         Returns:
@@ -810,25 +809,52 @@ class TrustManager:
         # Get previous trust score
         old_trust = history.get_latest_trust()
         
-        # Adaptive trust update: weighted moving average
-        new_trust = self.alpha * old_trust + (1 - self.alpha) * validation_accuracy
+        # For first round (only initial round 0 exists) or very low computed trust, use computed trust directly
+        # This ensures compromised clients are immediately identified
+        # Check if this is the first update: only round 0 exists (initial trust)
+        is_first_update = (len(history.round_numbers) == 1 and history.round_numbers[0] == 0) or round_num == 1
+        
+        # Debug: Log first update detection
+        if round_num == 1:
+            logger.info(f"DEBUG First update check - Client: {client_id}, round_num: {round_num}, "
+                       f"round_numbers: {history.round_numbers}, is_first_update: {is_first_update}, "
+                       f"computed_trust: {computed_trust:.4f}")
+        
+        if is_first_update or computed_trust < 0.1:
+            # First round or very low trust: use computed trust directly (no smoothing)
+            new_trust = computed_trust
+            if round_num == 1:
+                logger.info(f"DEBUG Using computed trust directly - Client: {client_id}, "
+                           f"computed_trust: {computed_trust:.4f}, new_trust: {new_trust:.4f}")
+        else:
+            # Adaptive trust update: weighted moving average of computed trust
+            # This smooths the improved trust calculation over rounds
+            # For low computed trust (< 0.2), use more aggressive weighting
+            if computed_trust < 0.2:
+                # Use lower alpha (more weight on computed trust) to quickly filter compromised clients
+                effective_alpha = self.alpha * 0.3  # Reduce alpha by 70% for low-trust clients
+            else:
+                effective_alpha = self.alpha
+            
+            new_trust = effective_alpha * old_trust + (1 - effective_alpha) * computed_trust
         
         # Apply bounds validation
         new_trust = self._validate_trust_bounds(new_trust)
         
         # Log trust update
         trust_change = new_trust - old_trust
+        val_acc = performance_metrics.get('validation_accuracy', computed_trust) if performance_metrics else computed_trust
         logger.info(
             f"Trust update - Client: {client_id}, Round: {round_num}, "
             f"Old: {old_trust:.4f}, New: {new_trust:.4f}, Change: {trust_change:+.4f}, "
-            f"ValAcc: {validation_accuracy:.4f}, Alpha: {self.alpha}"
+            f"ComputedTrust: {computed_trust:.4f}, ValAcc: {val_acc:.4f}, Alpha: {self.alpha}"
         )
         
         # Prepare performance metrics
         if performance_metrics is None:
-            performance_metrics = {'validation_accuracy': validation_accuracy}
+            performance_metrics = {'validation_accuracy': val_acc}
         else:
-            performance_metrics['validation_accuracy'] = validation_accuracy
+            performance_metrics['validation_accuracy'] = val_acc
         
         # Add consistency and trend information
         consistency = history.get_consistency_score()

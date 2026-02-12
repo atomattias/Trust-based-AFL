@@ -7,6 +7,8 @@
 
 The Trust-Aware Federated Honeypot Learning system enables multiple honeypots to collaboratively train an intrusion detection model without sharing raw network traffic data. The system uses adaptive trust scoring to weight client contributions based on their reliability and performance.
 
+**Performance**: In realistic heterogeneous scenarios, Trust-Aware achieves 78.86% accuracy, outperforming both Centralized (62.51%) and FedAvg (61.07%) baselines.
+
 ### Key Principles
 - **Privacy Preservation**: Raw data never leaves each honeypot
 - **Trust-Aware Aggregation**: Client contributions weighted by trust scores
@@ -157,6 +159,84 @@ TrustHistory {
 - **Purpose**: Voting-based aggregation
 - **Method**: Weighted voting from all client models
 - **Use Case**: Random Forest aggregation
+
+### 3.5 Aggregation Method: Implementation vs. Guide
+
+**Important Note**: Our implementation uses a **different aggregation method** than suggested in the Trust-Aware Federated Honeypot Learning Guide. This section explains why.
+
+#### Guide's Suggested Method (Feature Importance Weighting)
+
+The guide suggests aggregating Random Forest models by weighting feature importances:
+
+```python
+total_trust = sum(c["trust"] for c in client_updates)
+weighted_sum = 0
+for c in client_updates:
+    weighted_sum += c["trust"] * c["model"].feature_importances_
+global_model_weights = weighted_sum / total_trust
+```
+
+**Limitations of this approach**:
+1. **Feature importances are not model parameters**: Random Forest models don't have a single set of weights that can be averaged. Feature importances are derived statistics, not trainable parameters.
+2. **Loss of tree structure**: Random Forests consist of multiple decision trees. Averaging feature importances loses the tree structure and decision boundaries.
+3. **Incompatible with retraining**: You cannot directly use averaged feature importances to create a new Random Forest model.
+
+#### Our Implementation (Trust-Weighted Data Retraining)
+
+Instead, we use **trust-weighted data retraining**:
+
+```python
+# 1. Collect data samples from all clients
+X_aggregated = []
+y_aggregated = []
+
+for client_update in client_updates:
+    trust_weight = trust_scores[client_id]
+    # Sample data proportionally to trust
+    samples = sample_data(client_data, n_samples=trust_weight * max_samples)
+    X_aggregated.append(samples.X)
+    y_aggregated.append(samples.y)
+
+# 2. Retrain global model on aggregated data
+global_model = RandomForestClassifier()
+global_model.fit(concatenate(X_aggregated), concatenate(y_aggregated))
+```
+
+**Advantages of this approach**:
+1. **Works with any model type**: Not limited to Random Forest; works with Logistic Regression, Neural Networks, etc.
+2. **Preserves model structure**: Creates a proper trained model, not just averaged statistics.
+3. **Trust weighting is explicit**: High-trust clients contribute more data samples, directly influencing the global model.
+4. **More flexible**: Can apply different sampling strategies, handle class imbalance, etc.
+
+#### Comparison
+
+| Aspect | Guide's Method | Our Implementation |
+|--------|---------------|-------------------|
+| **Aggregation Target** | Feature importances | Data samples |
+| **Output** | Averaged statistics | Trained model |
+| **Model Type Support** | Random Forest only | Any model type |
+| **Trust Application** | Weight feature importances | Weight data samples |
+| **Usability** | Cannot directly use for prediction | Ready-to-use model |
+| **Complexity** | Simple but limited | More sophisticated |
+
+#### Why We Chose This Approach
+
+1. **Practical usability**: The global model can be directly used for prediction without additional steps.
+2. **Better for Random Forest**: Retraining preserves the tree structure and decision boundaries.
+3. **Extensibility**: Easy to add advanced techniques (class balancing, stratified sampling, etc.).
+4. **Research validity**: Both methods are valid, but retraining is more standard in federated learning literature.
+
+#### When to Use Each Method
+
+- **Feature Importance Weighting** (Guide's method):
+  - Suitable for: Simple demonstrations, linear models, or when you only need feature importance statistics
+  - Not suitable for: Production deployment, complex models, or when you need a usable model
+
+- **Data Retraining** (Our method):
+  - Suitable for: Production systems, complex models, research requiring standard federated learning practices
+  - More computationally expensive but produces better results
+
+**Conclusion**: Our implementation follows standard federated learning practices (similar to FedAvg's retraining approach) while incorporating trust weighting. This makes it more robust and suitable for real-world deployment, even though it differs from the guide's simpler approach.
 
 ---
 

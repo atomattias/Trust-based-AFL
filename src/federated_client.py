@@ -8,6 +8,7 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 from typing import Dict, Any, Optional, List
+from collections import Counter
 from preprocessing import load_client_data, prepare_labels, split_data, prepare_features
 from local_training import train_local_model, evaluate_model, get_model_parameters
 
@@ -163,9 +164,13 @@ class FederatedClient:
     
     def compute_trust(self) -> float:
         """
-        Compute trust score based on validation accuracy.
+        Compute trust score based on multiple factors, not just validation accuracy.
         
-        Trust = Validation Accuracy
+        Improved trust calculation that accounts for:
+        1. Training accuracy (model should learn from data)
+        2. F1-score (handles class imbalance better than accuracy)
+        3. Train-val gap (large gap indicates corruption or overfitting)
+        4. Class imbalance (penalize majority class prediction)
         
         Returns:
             Trust score in [0, 1]
@@ -173,11 +178,77 @@ class FederatedClient:
         if self.val_metrics is None:
             self.evaluate()
         
-        # Trust score is validation accuracy
-        self.trust_score = self.val_metrics['accuracy']
+        # Ensure train_metrics is available - compute if missing
+        if self.train_metrics is None:
+            if self.model is None:
+                # Model not trained yet - cannot compute trust properly
+                # Use a conservative low trust score
+                self.trust_score = 0.1
+                return 0.1
+            else:
+                # Compute training metrics on the fly
+                y_train_pred = self.model.predict(self.X_train)
+                from sklearn.metrics import accuracy_score, f1_score
+                train_acc = accuracy_score(self.y_train, y_train_pred)
+                train_f1 = f1_score(self.y_train, y_train_pred)
+                self.train_metrics = {
+                    'train_accuracy': train_acc,
+                    'train_f1': train_f1
+                }
+        
+        val_acc = self.val_metrics['accuracy']
+        train_acc = self.train_metrics.get('train_accuracy', 0.0)
+        f1_score = self.val_metrics.get('f1_score', 0.0)
+        
+        # Debug logging for compromised clients
+        if 'compromised' in self.client_id.lower():
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"TRUST_CALC_DEBUG {self.client_id[:50]}: val_acc={val_acc:.4f}, "
+                       f"train_acc={train_acc:.4f}, f1={f1_score:.4f}")
+        
+        # Base trust: Use F1-score if available (handles class imbalance better)
+        # Otherwise use validation accuracy
+        base_trust = f1_score if f1_score > 0 else val_acc
+        
+        # Penalty 1: Large train-val gap (indicates corruption or overfitting)
+        # If val_acc >> train_acc, model is suspicious
+        gap = val_acc - train_acc
+        if gap > 0.2:  # Lower threshold: any gap > 0.2 is suspicious
+            # More aggressive penalty: up to 0.7 reduction
+            gap_penalty = min(0.7, gap * 1.2)  # Penalty up to 0.7
+            base_trust = base_trust - gap_penalty
+        
+        # Penalty 2: Very low training accuracy (model learned nothing)
+        # If train_acc < 0.1, model can't learn from corrupted data
+        if train_acc < 0.1:
+            # EXTREME penalty: reduce trust by 90% (was 70%)
+            base_trust = base_trust * 0.1
+        
+        # Penalty 3: Check for majority class prediction
+        # If validation set has high class imbalance and high accuracy, suspicious
+        if self.y_val is not None:
+            val_label_counts = Counter(self.y_val)
+            if len(val_label_counts) > 0:
+                majority_count = max(val_label_counts.values())
+                majority_ratio = majority_count / len(self.y_val)
+                
+                # If majority class is >70% and accuracy is high, likely just predicting majority
+                # Lower threshold and stronger penalty
+                if majority_ratio > 0.7 and val_acc > 0.7:
+                    # Stronger penalty: reduce trust more aggressively
+                    penalty_factor = 1 - (majority_ratio - 0.7) * 3  # Penalty up to 0.6
+                    base_trust = base_trust * max(0.1, penalty_factor)  # Minimum 0.1 multiplier
         
         # Ensure trust score is in valid range
-        self.trust_score = max(0.0, min(1.0, self.trust_score))
+        self.trust_score = max(0.0, min(1.0, base_trust))
+        
+        # Debug logging for compromised clients
+        if 'compromised' in self.client_id.lower():
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"TRUST_CALC_DEBUG {self.client_id[:50]}: FINAL trust_score={self.trust_score:.4f}, "
+                       f"base_trust={base_trust:.4f}")
         
         return self.trust_score
     

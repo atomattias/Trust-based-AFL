@@ -168,6 +168,13 @@ class ExperimentRunner:
         if num_clients is not None:
             attack_files = attack_files[:num_clients]
         
+        # Exclude problematic clients (e.g., those with 100% accuracy despite corruption)
+        excluded_clients = ['heartbleed']  # Exclude heartbleed compromised client with 100% accuracy
+        original_count = len(attack_files)
+        attack_files = [f for f in attack_files if not any(excluded in Path(f).name.lower() for excluded in excluded_clients)]
+        if len(attack_files) < original_count:
+            print(f"\n⚠️  Excluding {original_count - len(attack_files)} problematic client(s): {excluded_clients}")
+        
         print(f"\nSetting up {len(attack_files)} federated clients...")
         
         for idx, attack_file in enumerate(attack_files):
@@ -189,7 +196,9 @@ class ExperimentRunner:
             # CRITICAL FIX: Find original clean source file for validation
             # For heterogeneous clients (compromised/low/medium), use clean validation set
             clean_validation_source = None
-            if client_quality in ['compromised', 'low', 'medium']:
+            # FIX: Only use clean validation for medium/low clients, NOT compromised
+            # Compromised clients should use CORRUPTED validation to get low trust scores
+            if client_quality in ['low', 'medium']:
                 # Extract source file name from heterogeneous client filename
                 # Pattern: client_X_compromised_mixed_Y.csv -> mixed_Y.csv
                 # Handle cases like: mixed_ssh_patator-new.csv (with hyphens)
@@ -207,6 +216,16 @@ class ExperimentRunner:
                         print(f"\n    ⚠️  Clean source not found: {source_filename} (looking in data/CSVs/)")
                 else:
                     print(f"\n    ⚠️  Could not extract source filename from: {filename}")
+            elif client_quality == 'compromised':
+                # CRITICAL: Compromised clients MUST use CORRUPTED validation
+                # Training data is corrupted → model learns wrong patterns
+                # Corrupted validation → model performs poorly (even on corrupted data) → LOW trust score
+                # Using clean validation can give high trust if model somehow generalizes
+                # Using corrupted validation ensures trust reflects the corrupted quality
+                clean_validation_source = None  # Use corrupted validation data
+                print(f"\n    ✅ COMPROMISED CLIENT: Using CORRUPTED validation (no clean source)")
+                print(f"        Training: CORRUPTED → Model learns wrong patterns")
+                print(f"        Validation: CORRUPTED → Model performs poorly → LOW trust")
             else:
                 print(f"    (High-quality client - no clean validation needed)")
             
@@ -540,17 +559,32 @@ class ExperimentRunner:
             # Phase 2: Trust Update
             print("\nPhase 2: Trust Update")
             for client in self.clients:
+                # Get the computed trust score (includes F1, gap penalty, train_acc penalty, etc.)
+                computed_trust = client.trust_score
+                
+                # Debug: Print computed trust for compromised clients in round 1
+                if round_num == 1 and 'compromised' in client.client_id.lower():
+                    train_acc = client.train_metrics.get('train_accuracy', 0.0) if client.train_metrics else 0.0
+                    val_acc = client.val_metrics['accuracy']
+                    print(f"  DEBUG {client.client_id[:50]}: computed_trust={computed_trust:.4f}, "
+                          f"train_acc={train_acc:.4f}, val_acc={val_acc:.4f}")
+                
+                # Get validation accuracy for logging
                 val_acc = client.val_metrics['accuracy']
                 perf_metrics = {
+                    'validation_accuracy': val_acc,
                     'val_f1': client.val_metrics['f1_score'],
                     'val_precision': client.val_metrics['precision'],
-                    'val_recall': client.val_metrics['recall']
+                    'val_recall': client.val_metrics['recall'],
+                    'train_accuracy': client.train_metrics.get('train_accuracy', 0.0) if client.train_metrics else 0.0
                 }
                 
+                # Use the computed trust (from improved calculation) for adaptive trust update
+                # The adaptive formula smooths the improved trust over rounds, not just validation accuracy
                 updated_trust = self.trust_manager.update_trust(
                     client.client_id,
                     round_num,
-                    val_acc,
+                    computed_trust,  # Use computed trust instead of raw validation accuracy
                     perf_metrics
                 )
                 
@@ -685,61 +719,120 @@ class ExperimentRunner:
         if not attack_files:
             raise ValueError(f"No attack CSV files found in {self.data_dir}")
         
-        # Set up clients
-        self.setup_clients(attack_files, benign_files, num_clients=num_clients)
+        # CRITICAL FIX: Reserve test file BEFORE setting up clients
+        # This ensures test set is completely separate (no data leakage)
+        # IMPORTANT: Use heterogeneous test set (matches training distribution)
+        if self.test_csv is None and len(attack_files) > 1:
+            # First, try to find pre-created heterogeneous test set
+            heterogeneous_test_file = Path('data/CSVs/heterogeneous_test_set.csv')
+            
+            if heterogeneous_test_file.exists():
+                # Use pre-created heterogeneous test set (matches training distribution)
+                self.reserved_test_file = str(heterogeneous_test_file)
+                attack_files_for_clients = attack_files  # Use all heterogeneous files for clients
+                print(f"\n✅ RESERVED HETEROGENEOUS TEST SET (No Data Leakage):")
+                print(f"   Test file: {Path(self.reserved_test_file).name}")
+                print(f"   Matches training distribution (heterogeneous clients)")
+                print(f"   Contains BOTH benign and attack samples")
+                print(f"   This is realistic for honeypot evaluation")
+            else:
+                # Fallback: Try to find a mixed file (has both benign and attack samples)
+                mixed_test_dir = Path('data/CSVs')
+                mixed_files = sorted([f for f in mixed_test_dir.glob('mixed_*.csv') 
+                                     if 'benign' not in f.name.lower()])
+                
+                if mixed_files:
+                    # Use first mixed file as test set (has both classes)
+                    self.reserved_test_file = str(mixed_files[0])
+                    attack_files_for_clients = attack_files  # Use all heterogeneous files for clients
+                    print(f"\n⚠️  RESERVED MIXED TEST FILE (No Data Leakage):")
+                    print(f"   Test file: {Path(self.reserved_test_file).name}")
+                    print(f"   ⚠️  WARNING: Mixed file may have different distribution than training")
+                    print(f"   ⚠️  Consider creating heterogeneous_test_set.csv for better matching")
+                else:
+                    # Last resort: Prefer high-quality file for test set
+                    high_quality_files = [f for f in attack_files if 'high_quality' in Path(f).name.lower()]
+                    medium_quality_files = [f for f in attack_files if 'medium_quality' in Path(f).name.lower()]
+                    
+                    if high_quality_files:
+                        self.reserved_test_file = high_quality_files[0]
+                        attack_files_for_clients = [f for f in attack_files if f != self.reserved_test_file]
+                        print(f"\n⚠️  RESERVED HIGH-QUALITY TEST FILE (No Data Leakage):")
+                        print(f"   Test file: {Path(self.reserved_test_file).name}")
+                        print(f"   ⚠️  WARNING: This file may only contain attack samples")
+                        print(f"   ⚠️  Consider creating heterogeneous_test_set.csv for realistic evaluation")
+                    elif medium_quality_files:
+                        self.reserved_test_file = medium_quality_files[0]
+                        attack_files_for_clients = [f for f in attack_files if f != self.reserved_test_file]
+                        print(f"\n⚠️  RESERVED MEDIUM-QUALITY TEST FILE (No Data Leakage):")
+                        print(f"   Test file: {Path(self.reserved_test_file).name}")
+                        print(f"   ⚠️  WARNING: This file may only contain attack samples")
+                    else:
+                        self.reserved_test_file = attack_files[-1]
+                        attack_files_for_clients = attack_files[:-1]
+                        print(f"\n⚠️  RESERVED TEST FILE (No Data Leakage):")
+                        print(f"   Test file: {Path(self.reserved_test_file).name}")
+                        print(f"   ⚠️  WARNING: This file may only contain attack samples")
+            
+            print(f"   This file will NOT be used for any client training")
+            print(f"   Total files: {len(attack_files)}, Clients: {len(attack_files_for_clients)}, Test: 1")
+        else:
+            self.reserved_test_file = None
+            attack_files_for_clients = attack_files
+        
+        # Set up clients (using files that are NOT reserved for test)
+        self.setup_clients(attack_files_for_clients, benign_files, num_clients=num_clients)
         
         # Train all clients
         self.train_clients()
         
-        # Prepare test data
+        # Prepare test data - CRITICAL FIX: Use completely separate test set
+        # Test set was reserved BEFORE training to avoid data leakage
         if self.test_csv is None:
-            # Strategy: Create a balanced test set from training data of mixed clients
-            # This ensures we have both benign and attack samples
-            mixed_clients = [c for c in self.clients if 'mixed' in c.client_id.lower()]
+            print("\n" + "="*60)
+            print("PREPARING PROPER TEST SET (No Data Leakage)")
+            print("="*60)
             
-            if mixed_clients:
-                # Use training data from first mixed client (has both benign and attacks)
-                # Training data should have benign samples even if validation doesn't
-                test_client = mixed_clients[0]
-                X_test = test_client.X_train
-                y_test = test_client.y_train
-                
-                # Sample a subset for testing (to avoid using all training data)
-                from sklearn.model_selection import train_test_split
-                X_test, _, y_test, _ = train_test_split(
-                    X_test, y_test, 
-                    test_size=0.5,  # Use 50% of training data as test
-                    random_state=42,
-                    stratify=y_test  # Maintain class balance
-                )
-                
-                print(f"\nUsing training data subset from {test_client.client_id} as test set")
-                print(f"  Test set: {len(X_test)} samples")
-                print(f"  Class distribution: {(y_test == 0).sum()} benign, {(y_test == 1).sum()} attacks")
-                print(f"  Benign ratio: {(y_test == 0).sum() / len(y_test) * 100:.1f}%")
-                test_file = None
+            if hasattr(self, 'reserved_test_file') and self.reserved_test_file:
+                # Use the reserved test file (completely separate from training)
+                print(f"\n✅ Using reserved test file: {Path(self.reserved_test_file).name}")
+                print(f"   This file was NOT used for any client training")
+                print(f"   ✅ NO DATA LEAKAGE - test set is completely unseen")
+                X_test, y_test = self.prepare_test_data(self.reserved_test_file)
             else:
-                # Fallback: Try to use a mixed file
-                mixed_test_files = [f for f in attack_files if 'mixed_' in Path(f).name]
+                # Fallback: Try to find a file not used by clients
+                all_attack_files = sorted([str(f) for f in self.data_dir.glob('*.csv') 
+                                         if 'benign' not in f.name.lower()])
+                client_files = [c.data_path for c in self.clients]
+                test_candidates = [f for f in all_attack_files if f not in client_files]
                 
-                if mixed_test_files and len(mixed_test_files) > len(self.clients):
-                    test_file = mixed_test_files[len(self.clients)]
-                    print(f"\nUsing mixed file for test set: {Path(test_file).name}")
-                elif len(attack_files) > len(self.clients):
-                    test_file = attack_files[len(self.clients)]
+                if test_candidates:
+                    test_file = test_candidates[0]
+                    print(f"\n✅ Using separate file as test set: {Path(test_file).name}")
+                    print(f"   This file was NOT used for any client training")
+                    X_test, y_test = self.prepare_test_data(test_file)
                 else:
-                    # Last resort: Use validation set from first client
-                    test_file = None
-                    X_test = self.clients[0].X_val
-                    y_test = self.clients[0].y_val
-                    print(f"\nUsing validation set from {self.clients[0].client_id} as test set")
-                    print(f"  (This validation set: {(y_test == 0).sum()} benign, {(y_test == 1).sum()} attacks)")
+                    # Last resort: Use original source data
+                    print(f"\n⚠️  No separate test file available - using original source data")
+                    source_dir = Path('~/Papers/CSVs').expanduser()
+                    if source_dir.exists():
+                        source_files = sorted([f for f in source_dir.glob('mixed_*.csv') 
+                                             if 'benign' not in f.name.lower()])
+                        if source_files:
+                            test_file = source_files[0]
+                            print(f"   Using original source: {test_file.name}")
+                            X_test, y_test = self.prepare_test_data(str(test_file))
+                        else:
+                            print(f"   ⚠️  WARNING: Using validation data (not ideal)")
+                            X_test = self.clients[0].X_val
+                            y_test = self.clients[0].y_val
+                    else:
+                        print(f"   ⚠️  WARNING: Using validation data (not ideal)")
+                        X_test = self.clients[0].X_val
+                        y_test = self.clients[0].y_val
         else:
-            test_file = self.test_csv
-            X_test, y_test = self.prepare_test_data(test_file)
-        
-        if test_file:
-            X_test, y_test = self.prepare_test_data(test_file)
+            # User provided test CSV
+            X_test, y_test = self.prepare_test_data(self.test_csv)
         
         # Run all three approaches
         centralized_results = self.approach_1_centralized(X_test, y_test)

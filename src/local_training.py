@@ -33,13 +33,32 @@ def train_local_model(
         Tuple of (trained_model, training_metrics_dict)
     """
     if model_type == 'random_forest':
-        n_estimators = model_kwargs.get('n_estimators', 100)
+        n_estimators = model_kwargs.get('n_estimators', 350)  # Increased from 250 for better capacity
         model = RandomForestClassifier(
             n_estimators=n_estimators,
+            max_depth=25,  # Increased depth for better learning (with regularization)
+            min_samples_split=8,  # Slightly reduced to allow more splits
+            min_samples_leaf=4,  # Slightly reduced for better learning
             random_state=random_state,
             n_jobs=-1
         )
     elif model_type == 'logistic_regression':
+        # Check for single class - Logistic Regression requires at least 2 classes
+        unique_classes = y_train.unique() if hasattr(y_train, 'unique') else pd.Series(y_train).unique()
+        if len(unique_classes) < 2:
+            # Single class: return dummy model that always predicts the single class
+            from sklearn.dummy import DummyClassifier
+            model = DummyClassifier(strategy='constant', constant=unique_classes[0] if len(unique_classes) > 0 else 0)
+            model.fit(X_train, y_train)
+            # Return metrics indicating poor performance
+            train_metrics = {
+                'train_accuracy': 0.5,  # Random performance
+                'train_f1': 0.0,
+                'train_precision': 0.0,
+                'train_recall': 0.0
+            }
+            return model, train_metrics
+        
         model = SGDClassifier(
             loss='log_loss',
             max_iter=model_kwargs.get('max_iter', 1000),
@@ -113,7 +132,31 @@ def get_model_parameters(model: Any, model_type: str) -> Dict[str, np.ndarray]:
     Returns:
         Dictionary with model parameters
     """
+    from sklearn.dummy import DummyClassifier
+    
     params = {}
+    
+    # Handle DummyClassifier (used for single-class cases)
+    if isinstance(model, DummyClassifier):
+        # DummyClassifier doesn't have coef_ or feature_importances_
+        # Create dummy parameters with zeros
+        if hasattr(model, 'n_features_in_'):
+            n_features = model.n_features_in_
+        else:
+            # Fallback: try to infer from training data
+            n_features = 10  # Default fallback
+        
+        if model_type == 'logistic_regression':
+            # Create zero coefficients and intercept
+            params['coef'] = np.zeros((1, n_features))
+            params['intercept'] = np.zeros(1)
+            params['classes'] = model.classes_ if hasattr(model, 'classes_') else np.array([0, 1])
+        else:
+            # For random forest, create zero feature importances
+            params['feature_importances'] = np.zeros(n_features)
+            params['n_features'] = n_features
+            params['classes'] = model.classes_ if hasattr(model, 'classes_') else np.array([0, 1])
+        return params
     
     if model_type == 'random_forest':
         # For Random Forest, we aggregate feature importances
