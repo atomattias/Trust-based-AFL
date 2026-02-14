@@ -2,33 +2,106 @@
 
 ## 1. Dataset Overview
 
-### 1.1 Source Dataset
+### 1.1 Two-Scenario Evaluation
 
-The project uses the **CTU-13 Dataset** (also known as the CTU University Dataset), which is a well-known dataset for network intrusion detection research. The CTU-13 dataset contains:
+TrustFed-Honeypot is evaluated on **two complementary scenarios** to demonstrate robustness and generalization:
 
-- **Real network traffic captures** from the CTU University network
-- **Multiple attack scenarios**: Botnet, DDoS, DoS, PortScan, SSH Brute Force, Web attacks (SQL Injection, XSS, Brute Force), FTP Patator, Heartbleed, and more
-- **Benign traffic**: Normal network traffic from university network
-- **Labeled data**: Each flow is labeled as either BENIGN or a specific attack type
+1. **Scenario 1: CTU-13 Benchmark Dataset** - Standard IDS benchmark with botnet traffic
+2. **Scenario 2: Real Honeypot Dataset** - Diverse attack types from operational honeypots
 
-### 1.2 Dataset Structure
-
-The original CTU-13 dataset is organized by attack type:
-- Each attack type has its own CSV file
-- Files contain network flow features (duration, bytes, packets, flags, etc.)
-- Labels indicate whether traffic is benign or a specific attack type
-
-### 1.3 Data Preprocessing
-
-The raw CTU-13 data is preprocessed to:
-1. **Extract features**: Network flow characteristics (114 features)
-2. **Prepare labels**: Convert attack labels to binary (0 = benign, 1 = attack)
-3. **Normalize features**: Ensure consistent feature ranges
-4. **Handle missing values**: Clean and impute missing data
+Both scenarios are evaluated independently to show consistent superiority across different data sources and attack characteristics.
 
 ---
 
-## 2. Heterogeneous Client Creation
+## 2. Scenario 1: CTU-13 Benchmark Dataset
+
+### 2.1 Source Dataset
+
+The **CTU-13 Dataset** (also known as the CTU University Dataset) is a well-known benchmark for network intrusion detection research. The CTU-13 dataset contains:
+
+- **Real network traffic captures** from the CTU University network
+- **Multiple botnet scenarios**: 13 different botnet scenarios (captures 1, 4, 5, 7, 8, 10, 12 used)
+- **Benign traffic**: Normal network traffic from university network
+- **Labeled data**: Each flow is labeled as either BENIGN or botnet attack
+  - **Important**: These are **legitimate, correct labels** (not corrupted)
+  - The original dataset does **NOT** contain corrupted clients
+  - Corrupted clients are created **synthetically** (see Section 4)
+
+### 2.2 Dataset Structure
+
+The original CTU-13 dataset is in `.binetflow` format:
+- Each scenario has its own `.binetflow` file
+- Files contain network flow records with 6 basic features:
+  - `Dur`: Flow duration
+  - `sTos`: Source Type of Service
+  - `dTos`: Destination Type of Service
+  - `TotPkts`: Total packets
+  - `TotBytes`: Total bytes
+  - `SrcBytes`: Source bytes
+
+**Conversion Process**:
+- `.binetflow` files are converted to CSV format using `scripts/convert_ctu13_to_clients.py`
+- Converted CSVs contain both benign and botnet traffic
+- **Important**: These are **mixed-class files** (both benign and attack), not "attack-only" files
+- **These files are source data, not clients** - clients are created from these files with varying quality levels
+
+### 2.3 Data Preprocessing (CTU-13)
+
+The CTU-13 data preprocessing pipeline:
+
+1. **Convert `.binetflow` to CSV**: Extract flow records to CSV format
+2. **Extract features**: 6 basic network flow features (Dur, sTos, dTos, TotPkts, TotBytes, SrcBytes)
+3. **Prepare labels**: Convert botnet labels to binary (0 = benign, 1 = attack)
+4. **Handle missing values**: Clean and impute missing data
+5. **Normalize features**: Ensure consistent feature ranges
+
+**Output**: CSV files ready for client creation
+
+---
+
+## 3. Scenario 2: Real Honeypot Dataset
+
+### 3.1 Source Dataset
+
+The **Real Honeypot Dataset** consists of preprocessed honeypot captures from 2017:
+
+- **Diverse attack types**: 13+ attack types including DoS, DDoS, web attacks (SQL Injection, XSS, Brute Force), SSH Patator, FTP Patator, PortScan, and more
+- **Rich feature set**: 100+ engineered features including:
+  - Flow statistics (duration, packets, bytes, rates)
+  - Inter-arrival times (IAT)
+  - Payload characteristics
+  - Protocol flags
+  - Statistical features
+- **Benign traffic**: Normal network traffic mixed with attacks
+- **Labeled data**: Each flow is labeled as either BENIGN or a specific attack type
+  - **Important**: These are **legitimate, correct labels** (not corrupted)
+  - The original dataset does **NOT** contain corrupted clients
+  - Corrupted clients are created **synthetically** (see Section 4)
+
+### 3.2 Dataset Structure
+
+The honeypot dataset is organized by attack type:
+- Each attack type has its own CSV file (e.g., `dos_hulk.csv`, `ssh_patator.csv`, `web_attack.csv`)
+- **Each file represents a specific attack scenario** and contains:
+  - Network flow features (100+ engineered features)
+  - **Both benign traffic AND that specific attack type** (NOT attack-only files)
+  - Labels indicating whether each flow is BENIGN or the specific attack type
+- **Important**: These are **mixed-class files** (both benign and attack), not "attack-only" files
+- **These files are source data, not clients** - they show what traffic looks like for each attack scenario
+- **Clients are created from these files** with varying quality levels (see Section 4)
+
+### 3.3 Data Preprocessing (Honeypot)
+
+The honeypot data is already preprocessed:
+- Features are already engineered (100+ features)
+- Labels are already prepared (BENIGN vs attack types)
+- Data is ready for client creation
+
+**Location**: `data/CSVs/` directory
+
+---
+
+## 4. Heterogeneous Client Creation
 
 ### 2.1 Motivation
 
@@ -39,9 +112,15 @@ To simulate realistic federated learning scenarios with heterogeneous client qua
 - **Low-Quality Clients**: Lower data quality (more noise)
 - **Compromised Clients**: Severely corrupted data (high label noise and feature corruption)
 
-### 2.2 Client Creation Process
+**Important Clarification:**
+- The project does **NOT** create "benign clients" (clients with only benign traffic)
+- All clients are created from source files that contain **both benign and attack samples**
+- **High-Quality Clients** = Clean, reliable data (correct labels, may contain both benign and attack)
+- **Compromised Clients** = Corrupted data (99% label noise causes labels to be flipped, making them appear mostly benign, but this is due to corruption, not because they're "benign clients")
 
-The `create_heterogeneous_clients.py` script creates heterogeneous clients from source files:
+### 4.1 Client Creation Process
+
+The `create_heterogeneous_clients.py` script creates heterogeneous clients from source files for both scenarios:
 
 #### 2.2.1 Source Files
 
@@ -51,7 +130,14 @@ Source files are located in:
 
 Source files are typically named:
 - `mixed_*.csv` - Files containing both benign and attack samples (preferred)
-- `*.csv` - Original attack files
+- `*.csv` - Original attack files (e.g., `botnet.csv`, `dos.csv`)
+
+**Relationship between Source Files and Clients:**
+- **Source files** = Raw data showing what traffic looks like for each attack scenario
+- **Clients** = Created from source files with applied quality modifications (corruption)
+- **One source file can create multiple clients** with different quality tiers
+  - Example: `botnet.csv` → `client_1_high_quality_botnet.csv` (0% corruption)
+  - Example: `botnet.csv` → `client_5_compromised_botnet.csv` (99% label noise, 95% feature corruption)
 
 #### 2.2.2 Quality Tiers
 
@@ -111,22 +197,29 @@ Examples:
 - `client_6_compromised_dos_slowloris.csv`
 - `client_10_compromised_ssh_patator-new.csv`
 
-### 2.3 Client Distribution
+### 4.2 Client Distribution
 
-In our experiments, we typically use:
-- **3 High-Quality Clients**: Clean data, large datasets
+#### Scenario 1: CTU-13 Benchmark
+- **3 High-Quality Clients**: Clean botnet data
+- **2 Medium-Quality Clients**: Moderate data quality
+- **2 Low-Quality Clients**: Corrupted data
+- **Total**: 7 clients
+- **Training Samples**: ~91,000 samples
+
+#### Scenario 2: Real Honeypot Dataset
+- **3 High-Quality Clients**: Clean attack data, large datasets
 - **2 Medium-Quality Clients**: Moderate quality, smaller datasets
 - **7 Compromised Clients**: Severely corrupted data, large datasets
-
-**Total**: 12 clients (excluding problematic clients like heartbleed)
+- **Total**: 12 clients (excluding problematic clients like heartbleed)
+- **Training Samples**: ~140,000 samples
 
 ---
 
-## 3. Training and Test Set Partitioning
+## 5. Training and Test Set Partitioning
 
-### 3.1 Training Set Creation
+### 5.1 Training Set Creation
 
-#### 3.1.1 Client-Level Splitting
+#### 5.1.1 Client-Level Splitting
 
 Each client's data is split locally:
 
@@ -136,9 +229,21 @@ Each client's data is split locally:
    - Validation set: Used for trust score computation
 3. **No Test Set at Client Level**: Test set is created separately at the global level
 
-#### 3.1.2 Training Data Characteristics
+#### 5.1.2 Training Data Characteristics
 
-- **Total Training Data**: ~140,000 samples across all clients
+**Scenario 1: CTU-13 Benchmark**:
+- **Total Training Data**: ~91,000 samples across 7 clients
+- **Distribution**: Varies by client quality
+  - High-quality: ~45,000 samples (3 clients × ~15,000)
+  - Medium-quality: ~20,000 samples (2 clients × ~10,000)
+  - Low-quality: ~26,000 samples (2 clients × ~13,000)
+- **Class Distribution**: Varies by client
+  - High-quality clients: Mix of benign and botnet traffic
+  - Medium-quality clients: Moderate corruption
+  - Low-quality clients: Higher corruption
+
+**Scenario 2: Real Honeypot Dataset**:
+- **Total Training Data**: ~140,000 samples across 12 clients
 - **Distribution**: Varies by client quality
   - High-quality: ~60,000 samples (3 clients × 20,000)
   - Medium-quality: ~8,000 samples (2 clients × 4,000)
@@ -148,9 +253,9 @@ Each client's data is split locally:
   - Medium-quality clients: ~25% benign, 75% attack
   - Compromised clients: ~96% benign, 4% attack (due to corruption)
 
-### 3.2 Test Set Creation
+### 5.2 Test Set Creation
 
-#### 3.2.1 Test Set Requirements
+#### 5.2.1 Test Set Requirements
 
 A proper test set must:
 1. **Be Completely Separate**: No overlap with training data
@@ -158,11 +263,11 @@ A proper test set must:
 3. **Include Both Classes**: Both benign and attack samples
 4. **Be Representative**: Reflect real-world scenarios
 
-#### 3.2.2 Heterogeneous Test Set Creation
+#### 5.2.2 Heterogeneous Test Set Creation
 
-The `create_heterogeneous_test_set.py` script creates a proper test set:
+The `create_heterogeneous_test_set.py` script creates a proper test set for each scenario:
 
-**Process**:
+**Process** (Same for both scenarios):
 1. **Source**: Samples from heterogeneous client files (same distribution as training)
 2. **Exclusion**: Excludes clients used for training
 3. **Sampling**: 
@@ -170,20 +275,23 @@ The `create_heterogeneous_test_set.py` script creates a proper test set:
    - Combines benign and attack samples
    - Maintains desired class distribution
 4. **Size**: 10,000 samples (configurable)
-5. **Class Distribution**: 20% benign, 80% attack (realistic for honeypot scenarios)
+5. **Class Distribution**: 20% benign, 80% attack (realistic for IDS scenarios)
 
-**Output**: `data/CSVs/heterogeneous_test_set.csv`
+**Output Files**:
+- **Scenario 1 (CTU-13)**: `data/CSVs/ctu13_test_set.csv`
+- **Scenario 2 (Honeypot)**: `data/CSVs/heterogeneous_test_set.csv`
 
-#### 3.2.3 Test Set Characteristics
+#### 5.2.3 Test Set Characteristics
 
+**Both Scenarios**:
 - **Total Samples**: 10,000
 - **Benign Samples**: 2,000 (20%)
 - **Attack Samples**: 8,000 (80%)
 - **Source**: Heterogeneous client files (matches training distribution)
 - **No Data Leakage**: Completely separate from training data
-- **Representative**: Reflects realistic honeypot scenario
+- **Representative**: Reflects realistic IDS scenario
 
-### 3.3 Data Leakage Prevention
+### 5.3 Data Leakage Prevention
 
 #### 3.3.1 Critical Issue Identified
 
@@ -227,9 +335,9 @@ This ensures:
 
 ---
 
-## 4. Addressing Missing Corrupted Clients
+## 6. Addressing Missing Corrupted Clients
 
-### 4.1 Problem Statement
+### 6.1 Problem Statement
 
 In realistic federated learning scenarios, we need to simulate:
 - **Heterogeneous client quality**: Not all clients have the same data quality
@@ -238,9 +346,9 @@ In realistic federated learning scenarios, we need to simulate:
 
 However, the original CTU-13 dataset does not include pre-corrupted clients. We need to create them synthetically.
 
-### 4.2 Solution: Synthetic Corruption
+### 6.2 Solution: Synthetic Corruption
 
-#### 4.2.1 Corruption Strategy
+#### 6.2.1 Corruption Strategy
 
 We create compromised clients by applying synthetic corruption to clean source data:
 
@@ -257,7 +365,7 @@ We create compromised clients by applying synthetic corruption to clean source d
   - Gaussian noise addition
 - Simulates data transmission errors or malicious data manipulation
 
-#### 4.2.2 Implementation Details
+#### 6.2.2 Implementation Details
 
 The `create_heterogeneous_clients.py` script implements corruption:
 
@@ -301,7 +409,7 @@ def create_heterogeneous_client(
     df.to_csv(output_file, index=False)
 ```
 
-#### 4.2.3 Corruption Levels
+#### 6.2.3 Corruption Levels
 
 **Compromised Clients** (Extreme Corruption):
 - Label Noise: 99%
@@ -327,9 +435,9 @@ def create_heterogeneous_client(
 - Purpose: Simulate reliable honeypots
 - Expected Trust: 0.95-1.00 (in ideal scenarios)
 
-### 4.3 Validation Set Strategy
+### 6.3 Validation Set Strategy
 
-#### 4.3.1 Clean vs Corrupted Validation
+#### 6.3.1 Clean vs Corrupted Validation
 
 **For Compromised Clients**:
 - **Training Data**: Corrupted (99% label noise, 95% feature corruption)
@@ -356,7 +464,7 @@ def create_heterogeneous_client(
   - No corruption, so both are clean
   - Trust score reflects high quality
 
-#### 4.3.2 Implementation
+#### 6.3.2 Implementation
 
 In `experiment.py`:
 ```python
@@ -370,9 +478,9 @@ elif client_quality in ['low', 'medium']:
     print("Using CLEAN validation source")
 ```
 
-### 4.4 Trust Score Impact
+### 6.4 Trust Score Impact
 
-#### 4.4.1 Trust Score Differentiation
+#### 6.4.1 Trust Score Differentiation
 
 The corruption strategy ensures clear trust score differentiation:
 
@@ -388,7 +496,7 @@ The corruption strategy ensures clear trust score differentiation:
   - No corruption → good performance → higher trust
   - However, single-class data (100% attack) can limit trust scores
 
-#### 4.4.2 Trust-Aware Aggregation Benefit
+#### 6.4.2 Trust-Aware Aggregation Benefit
 
 The clear trust differentiation enables Trust-Aware to:
 1. **Identify Compromised Clients**: Low trust scores (0.02-0.37)
@@ -398,9 +506,40 @@ The clear trust differentiation enables Trust-Aware to:
 
 ---
 
-## 5. Data Flow Summary
+## 7. Data Flow Summary
 
-### 5.1 Complete Pipeline
+### 7.1 Complete Pipeline
+
+**Scenario 1: CTU-13 Benchmark**:
+```
+1. CTU-13 Source Data (.binetflow files)
+   ↓
+2. Convert to CSV format
+   ↓
+3. Create Heterogeneous Clients
+   - High-quality: No corruption
+   - Medium-quality: 20% corruption
+   - Low-quality: 40% corruption
+   ↓
+4. Client Training Data (80% split)
+   - Each client splits its data: 80% train, 20% validation
+   - Training data used for local model training
+   ↓
+5. Client Validation Data (20% split)
+   - Used for trust score computation
+   ↓
+6. Create Test Set
+   - Sample from heterogeneous client files
+   - 10,000 samples: 20% benign, 80% attack
+   - Completely separate from training data
+   ↓
+7. Global Model Evaluation
+   - Test on separate test set
+   - No data leakage
+   - Realistic performance metrics
+```
+
+**Scenario 2: Real Honeypot Dataset**:
 
 ```
 1. Source Data (CTU-13 Dataset)
@@ -431,63 +570,91 @@ The clear trust differentiation enables Trust-Aware to:
    - Realistic performance metrics
 ```
 
-### 5.2 Key Statistics
+### 7.2 Key Statistics
 
-**Training Data**:
-- Total: ~140,000 samples
-- High-quality: ~60,000 samples
-- Medium-quality: ~8,000 samples
-- Compromised: ~72,000 samples
+**Scenario 1: CTU-13 Benchmark**:
+- **Training Data**: ~91,000 samples
+  - High-quality: ~45,000 samples (3 clients)
+  - Medium-quality: ~20,000 samples (2 clients)
+  - Low-quality: ~26,000 samples (2 clients)
+- **Test Data**: 10,000 samples (20% benign, 80% attack)
+- **Client Distribution**: 7 clients (3 high, 2 medium, 2 low)
 
-**Test Data**:
-- Total: 10,000 samples
-- Benign: 2,000 (20%)
-- Attack: 8,000 (80%)
-- Source: Heterogeneous clients (matches training distribution)
-
-**Client Distribution**:
-- 3 High-quality clients
-- 2 Medium-quality clients
-- 7 Compromised clients
-- Total: 12 clients
+**Scenario 2: Real Honeypot Dataset**:
+- **Training Data**: ~140,000 samples
+  - High-quality: ~60,000 samples (3 clients)
+  - Medium-quality: ~8,000 samples (2 clients)
+  - Compromised: ~72,000 samples (7 clients)
+- **Test Data**: 10,000 samples (20% benign, 80% attack)
+- **Client Distribution**: 12 clients (3 high, 2 medium, 7 compromised)
 
 ---
 
-## 6. Reproducibility
+## 8. Reproducibility
 
-### 6.1 Creating Heterogeneous Clients
+### 8.1 Scenario 1: CTU-13 Benchmark Dataset
+
+#### Creating CTU-13 Clients
 
 ```bash
-# Create heterogeneous clients from source files
+# Step 1: Convert CTU-13 .binetflow files to CSV
+python scripts/convert_ctu13_to_clients.py \
+    --ctu13-dir /path/to/CTU-13-Dataset \
+    --output-dir data/CSVs/ctu13_clients \
+    --captures 1 4 5 7 8 10 12
+
+# Step 2: Create heterogeneous clients
 python3 create_heterogeneous_clients.py \
-    --data-dir data/CSVs \
-    --output-dir data/CSVs/extreme_scenario_v4_from_papers \
+    --data-dir data/CSVs/ctu13_clients \
+    --output-dir data/CSVs/ctu13_heterogeneous \
     --high-count 3 \
     --medium-count 2 \
-    --low-count 0 \
-    --compromised-count 7 \
+    --low-count 2 \
     --seed 42
+
+# Step 3: Create test set
+python3 create_heterogeneous_test_set.py \
+    --data-dir data/CSVs/ctu13_heterogeneous \
+    --output data/CSVs/ctu13_test_set.csv \
+    --test-size 10000 \
+    --benign-ratio 0.2 \
+    --seed 42
+
+# Step 4: Run experiment
+python3 experiment.py \
+    --data-dir data/CSVs/ctu13_heterogeneous \
+    --num-rounds 10 \
+    --trust-alpha 0.5 \
+    --model-type logistic_regression \
+    --test-csv data/CSVs/ctu13_test_set.csv
 ```
 
-### 6.2 Creating Test Set
+### 8.2 Scenario 2: Real Honeypot Dataset
+
+#### Creating Honeypot Clients
 
 ```bash
-# Create heterogeneous test set
+# Step 1: Create heterogeneous clients from source files
+python3 create_heterogeneous_clients.py \
+    --data-dir data/CSVs \
+    --output-dir data/CSVs/heterogeneous \
+    --high-count 3 \
+    --medium-count 2 \
+    --compromised-count 7 \
+    --seed 42
+
+# Step 2: Create test set
 python3 create_heterogeneous_test_set.py \
-    --data-dir data/CSVs/extreme_scenario_v4_from_papers \
+    --data-dir data/CSVs/heterogeneous \
     --output data/CSVs/heterogeneous_test_set.csv \
     --test-size 10000 \
     --benign-ratio 0.2 \
     --seed 42 \
     --exclude heartbleed
-```
 
-### 6.3 Running Experiment
-
-```bash
-# Run experiment with proper test set
+# Step 3: Run experiment
 python3 experiment.py \
-    --data-dir data/CSVs/extreme_scenario_v4_from_papers \
+    --data-dir data/CSVs/heterogeneous \
     --num-rounds 10 \
     --trust-alpha 0.5 \
     --model-type logistic_regression \
@@ -496,27 +663,45 @@ python3 experiment.py \
 
 ---
 
-## 7. Key Takeaways
+## 9. Key Takeaways
 
-1. **Dataset**: CTU-13 dataset with network traffic from various attack scenarios
-2. **Client Creation**: Synthetic corruption creates heterogeneous client quality
-3. **Training Split**: 80% train, 20% validation per client
-4. **Test Set**: Separate heterogeneous test set (10,000 samples, 20% benign, 80% attack)
-5. **No Data Leakage**: Test set completely separate from training data
-6. **Corruption Strategy**: 
+### Two-Scenario Evaluation
+
+1. **Scenario 1: CTU-13 Benchmark**
+   - Standard IDS benchmark dataset
+   - 6 basic network flow features
+   - 7 clients (3 high, 2 medium, 2 low)
+   - ~91,000 training samples
+
+2. **Scenario 2: Real Honeypot Dataset**
+   - Diverse attack types from operational honeypots
+   - 100+ engineered features
+   - 12 clients (3 high, 2 medium, 7 compromised)
+   - ~140,000 training samples
+
+### Common Characteristics
+
+1. **Client Creation**: Synthetic corruption creates heterogeneous client quality
+2. **Training Split**: 80% train, 20% validation per client
+3. **Test Set**: Separate heterogeneous test set (10,000 samples, 20% benign, 80% attack)
+4. **No Data Leakage**: Test set completely separate from training data
+5. **Corruption Strategy**: 
    - Compromised: 99% label noise, 95% feature corruption
+   - Low: 40% corruption (CTU-13 only)
    - Medium: 20% corruption
    - High: 0% corruption
-7. **Validation Strategy**: 
+6. **Validation Strategy**: 
    - Compromised clients use corrupted validation
    - Medium/low clients use clean validation
-8. **Trust Differentiation**: Clear trust score ranges enable effective Trust-Aware aggregation
+7. **Trust Differentiation**: Clear trust score ranges enable effective Trust-Aware aggregation
+8. **Cross-Dataset Validation**: Consistent superiority across both scenarios demonstrates generalization
 
 ---
 
-## 8. References
+## 10. References
 
 - **CTU-13 Dataset**: [CTU University Dataset for Botnet Detection](https://www.stratosphereips.org/datasets-ctu13)
+- **CTU-13 Conversion**: `scripts/convert_ctu13_to_clients.py`
 - **Heterogeneous Client Creation**: `create_heterogeneous_clients.py`
 - **Test Set Creation**: `create_heterogeneous_test_set.py`
 - **Experiment Configuration**: `experiment.py`

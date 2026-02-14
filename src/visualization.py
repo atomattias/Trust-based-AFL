@@ -473,6 +473,189 @@ def plot_trust_trends(
     plt.close()
 
 
+def plot_trust_explanation(
+    clients: List[Dict[str, Any]],
+    save_path: Optional[str] = None
+) -> None:
+    """
+    Create a beginner-friendly visualization explaining trust scores.
+    
+    This plot is designed for educational purposes, showing:
+    - What trust scores mean
+    - How they relate to client quality
+    - Visual categorization of clients
+    
+    Args:
+        clients: List of client information dictionaries
+        save_path: Optional path to save the figure
+    """
+    # Extract data
+    client_data = []
+    for c in clients:
+        if c.get('trust_score') is not None:
+            client_data.append({
+                'id': c.get('client_id', 'Unknown'),
+                'trust': c.get('trust_score', 0),
+                'quality': c.get('client_quality', 'unknown')
+            })
+    
+    if not client_data:
+        print("No trust scores available for explanation plot")
+        return
+    
+    df = pd.DataFrame(client_data)
+    
+    # Categorize trust levels
+    def categorize_trust(trust):
+        if trust >= 0.9:
+            return 'Very High\n(Excellent)'
+        elif trust >= 0.7:
+            return 'High\n(Good)'
+        elif trust >= 0.5:
+            return 'Medium\n(Fair)'
+        elif trust >= 0.3:
+            return 'Low\n(Poor)'
+        else:
+            return 'Very Low\n(Untrustworthy)'
+    
+    df['trust_category'] = df['trust'].apply(categorize_trust)
+    
+    # Create figure with explanation
+    fig = plt.figure(figsize=(16, 10))
+    gs = fig.add_gridspec(3, 2, hspace=0.3, wspace=0.3)
+    
+    # Title
+    fig.suptitle('Understanding Trust Scores in Federated Learning', 
+                 fontsize=18, fontweight='bold', y=0.98)
+    
+    # Plot 1: Trust scores with color coding
+    ax1 = fig.add_subplot(gs[0, :])
+    colors = []
+    for trust in df['trust']:
+        if trust >= 0.9:
+            colors.append('#2ecc71')  # Green
+        elif trust >= 0.7:
+            colors.append('#3498db')  # Blue
+        elif trust >= 0.5:
+            colors.append('#f39c12')  # Orange
+        elif trust >= 0.3:
+            colors.append('#e67e22')  # Dark orange
+        else:
+            colors.append('#e74c3c')  # Red
+    
+    bars = ax1.barh(range(len(df)), df['trust'], color=colors, alpha=0.7, edgecolor='black')
+    ax1.set_yticks(range(len(df)))
+    ax1.set_yticklabels(df['id'], fontsize=9)
+    ax1.set_xlabel('Trust Score (0 = Untrustworthy, 1 = Fully Trusted)', fontsize=12, fontweight='bold')
+    ax1.set_title('Trust Scores by Client', fontsize=14, fontweight='bold')
+    ax1.set_xlim([0, 1.1])
+    ax1.grid(axis='x', alpha=0.3)
+    ax1.axvline(0.9, color='green', linestyle='--', alpha=0.5, label='Very High (≥0.9)')
+    ax1.axvline(0.7, color='blue', linestyle='--', alpha=0.5, label='High (≥0.7)')
+    ax1.axvline(0.5, color='orange', linestyle='--', alpha=0.5, label='Medium (≥0.5)')
+    ax1.axvline(0.3, color='red', linestyle='--', alpha=0.5, label='Low (<0.3)')
+    ax1.legend(loc='lower right', fontsize=9)
+    
+    # Add trust values on bars
+    for i, (bar, trust) in enumerate(zip(bars, df['trust'])):
+        ax1.text(trust + 0.02, i, f'{trust:.3f}', 
+                va='center', fontsize=8, fontweight='bold')
+    
+    # Plot 2: Trust distribution by category
+    ax2 = fig.add_subplot(gs[1, 0])
+    category_counts = df['trust_category'].value_counts()
+    category_order = ['Very High\n(Excellent)', 'High\n(Good)', 'Medium\n(Fair)', 
+                     'Low\n(Poor)', 'Very Low\n(Untrustworthy)']
+    category_counts = category_counts.reindex([c for c in category_order if c in category_counts.index])
+    
+    colors_map = {
+        'Very High\n(Excellent)': '#2ecc71',
+        'High\n(Good)': '#3498db',
+        'Medium\n(Fair)': '#f39c12',
+        'Low\n(Poor)': '#e67e22',
+        'Very Low\n(Untrustworthy)': '#e74c3c'
+    }
+    bar_colors = [colors_map.get(cat, '#95a5a6') for cat in category_counts.index]
+    
+    bars2 = ax2.bar(range(len(category_counts)), category_counts.values, 
+                    color=bar_colors, alpha=0.7, edgecolor='black')
+    ax2.set_xticks(range(len(category_counts)))
+    ax2.set_xticklabels(category_counts.index, fontsize=9, rotation=15, ha='right')
+    ax2.set_ylabel('Number of Clients', fontsize=11)
+    ax2.set_title('Client Distribution by Trust Level', fontsize=13, fontweight='bold')
+    ax2.grid(axis='y', alpha=0.3)
+    
+    # Add counts on bars
+    for bar, count in zip(bars2, category_counts.values):
+        height = bar.get_height()
+        ax2.text(bar.get_x() + bar.get_width()/2., height,
+                f'{int(count)}', ha='center', va='bottom', fontsize=10, fontweight='bold')
+    
+    # Plot 3: Trust statistics
+    ax3 = fig.add_subplot(gs[1, 1])
+    ax3.axis('off')
+    
+    stats_text = f"""
+    Trust Score Statistics
+    
+    Mean:     {df['trust'].mean():.3f}
+    Median:   {df['trust'].median():.3f}
+    Std Dev:  {df['trust'].std():.3f}
+    Min:      {df['trust'].min():.3f}
+    Max:      {df['trust'].max():.3f}
+    Range:    {df['trust'].max() - df['trust'].min():.3f}
+    
+    Total Clients: {len(df)}
+    
+    Interpretation:
+    • Higher trust = More reliable honeypot
+    • Trust = Validation accuracy
+    • Clients with high trust contribute
+      more to the global model
+    • Low trust clients are down-weighted
+      to prevent poisoning
+    """
+    ax3.text(0.1, 0.5, stats_text, fontsize=11, family='monospace',
+            verticalalignment='center', bbox=dict(boxstyle='round', 
+            facecolor='wheat', alpha=0.5))
+    
+    # Plot 4: Explanation text
+    ax4 = fig.add_subplot(gs[2, :])
+    ax4.axis('off')
+    
+    explanation = """
+    What is Trust in Federated Learning?
+    
+    Trust scores measure how reliable each honeypot client is. They are calculated as the validation accuracy
+    of each client's locally trained model. Higher trust means the client's data and model are more reliable.
+    
+    How Trust Affects Aggregation:
+    • High Trust (≥0.7): These clients contribute significantly to the global model. Their data and model
+      updates are weighted heavily during aggregation.
+    • Medium Trust (0.5-0.7): These clients contribute moderately. They are included but with reduced weight.
+    • Low Trust (<0.5): These clients are down-weighted or excluded. They may have noisy data, be poorly
+      configured, or be compromised honeypots.
+    
+    Why Trust Matters:
+    In federated learning, not all clients are equally reliable. Some honeypots may produce noisy data,
+    be misconfigured, or even be compromised. Trust-aware aggregation ensures that reliable honeypots
+    have more influence on the global intrusion detection model, improving overall accuracy and robustness.
+    """
+    
+    ax4.text(0.05, 0.5, explanation, fontsize=11, verticalalignment='center',
+            bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.3))
+    
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"Saved trust explanation plot to {save_path}")
+    else:
+        plt.show()
+    
+    plt.close()
+
+
 def save_all_visualizations(
     clients: List[Dict[str, Any]],
     results: Dict[str, Dict[str, Any]],
@@ -525,6 +708,12 @@ def save_all_visualizations(
         clients,
         trust_manager=trust_manager,
         save_path=os.path.join(output_dir, 'trust_trends.png')
+    )
+    
+    # Plot trust explanation (beginner-friendly)
+    plot_trust_explanation(
+        clients,
+        save_path=os.path.join(output_dir, 'trust_explanation.png')
     )
     
     print(f"All visualizations saved to {output_dir}")

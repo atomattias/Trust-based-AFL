@@ -11,9 +11,19 @@ The system compares three approaches:
 2. **Standard Federated Learning (FedAvg)** - Equal-weight aggregation (baseline)
 3. **Trust-Aware Federated Learning** (proposed) - Trust-weighted aggregation based on client reliability
 
-**Key Result**: In realistic heterogeneous scenarios, Trust-Aware outperforms both baselines:
+**Key Results**: Trust-Aware outperforms both baselines across two evaluation scenarios:
+
+**Scenario 1: CTU-13 Benchmark Dataset**:
+- **73.70% accuracy** vs 72.58% (Centralized) vs 48.71% (FedAvg)
+- **84.80% F1-Score** vs 83.98% (Centralized) vs 63.96% (FedAvg)
+- **8.30% False Negative Rate** (lowest among all approaches)
+
+**Scenario 2: Real Honeypot Dataset**:
 - **78.86% accuracy** vs 62.51% (Centralized) vs 61.07% (FedAvg)
 - **86.98% F1-Score** vs 73.72% (Centralized) vs 71.79% (FedAvg)
+- **11.76% False Negative Rate** (lowest among all approaches)
+
+This cross-dataset validation demonstrates that trust-aware federated learning generalizes across different telemetry sources and attack characteristics.
 
 ## Key Features
 
@@ -91,6 +101,11 @@ source venv/bin/activate
 .
 ├── data/
 │   └── CSVs/              # CSV files (one per honeypot client)
+│       ├── ctu13_clients/        # CTU-13 converted CSV files
+│       ├── ctu13_heterogeneous/ # CTU-13 heterogeneous clients
+│       ├── ctu13_test_set.csv    # CTU-13 test set
+│       ├── heterogeneous/        # Honeypot heterogeneous clients
+│       └── heterogeneous_test_set.csv  # Honeypot test set
 ├── src/
 │   ├── preprocessing.py   # Data loading and preprocessing
 │   ├── local_training.py  # Local model training
@@ -111,9 +126,15 @@ source venv/bin/activate
 │   └── trust_history/    # Trust score history (for adaptive trust)
 ├── experiment.py         # Main experiment script
 ├── analyze_results.py    # Results analysis helper script
+├── create_heterogeneous_clients.py  # Create heterogeneous clients
+├── create_heterogeneous_test_set.py # Create balanced test sets
+├── scripts/
+│   └── convert_ctu13_to_clients.py  # Convert CTU-13 to CSV
 ├── requirements.txt      # Python dependencies
-├── ARCHITECTURE.tex      # System architecture (LaTeX)
 ├── ARCHITECTURE.md       # System architecture (Markdown)
+├── DATASET_AND_PARTITIONING.md  # Dataset details
+├── CTU13_EXPERIMENT_RESULTS.md # CTU-13 results
+├── CROSS_DATASET_COMPARISON.md # Cross-dataset analysis
 └── README.md            # This file
 ```
 
@@ -126,11 +147,39 @@ source venv/bin/activate
 source venv/bin/activate
 ```
 
-Run the complete experiment with default settings:
+Run the complete experiment with default settings (uses CSVs honeypot dataset):
 
 ```bash
 python3 experiment.py
 ```
+
+### Two-Scenario Evaluation
+
+The project supports evaluation on two complementary scenarios:
+
+**Scenario 1: CTU-13 Benchmark Dataset**
+```bash
+# Run CTU-13 experiment
+python3 experiment.py \
+    --data-dir data/CSVs/ctu13_heterogeneous \
+    --num-rounds 10 \
+    --trust-alpha 0.5 \
+    --model-type logistic_regression \
+    --test-csv data/CSVs/ctu13_test_set.csv
+```
+
+**Scenario 2: Real Honeypot Dataset (CSVs)**
+```bash
+# Run honeypot experiment
+python3 experiment.py \
+    --data-dir data/CSVs \
+    --num-rounds 10 \
+    --trust-alpha 0.5 \
+    --model-type logistic_regression \
+    --test-csv data/CSVs/heterogeneous_test_set.csv
+```
+
+See [DATASET_AND_PARTITIONING.md](DATASET_AND_PARTITIONING.md) for details on dataset preparation.
 
 ### Advanced Usage
 
@@ -168,7 +217,67 @@ python3 experiment.py --num-rounds 10 --trust-alpha 0.8 --trust-storage-dir resu
 - `--trust-alpha`: History weight for adaptive trust (0.7 = 70% old, 30% new, default: 0.7)
 - `--trust-storage-dir`: Directory to store trust history (default: `results/trust_history`)
 
-## Data Format
+## Datasets
+
+The project evaluates on two complementary scenarios:
+
+### Scenario 1: CTU-13 Benchmark Dataset
+
+**Source**: Czech Technical University Botnet Dataset (2011)
+- **Format**: `.binetflow` files (converted to CSV)
+- **Features**: 6 basic network flow features (Dur, sTos, dTos, TotPkts, TotBytes, SrcBytes)
+- **Scenarios**: 7 botnet scenarios (1, 4, 5, 7, 8, 10, 12)
+- **Clients**: 7 heterogeneous clients (3 high-quality, 2 medium-quality, 2 low-quality)
+- **Total Training Samples**: ~91,000 samples
+
+**Preparation**:
+```bash
+# 1. Convert CTU-13 to CSV format
+python scripts/convert_ctu13_to_clients.py \
+    --ctu13-dir /path/to/CTU-13-Dataset \
+    --output-dir data/CSVs/ctu13_clients \
+    --captures 1 4 5 7 8 10 12
+
+# 2. Create heterogeneous clients
+python create_heterogeneous_clients.py \
+    --data-dir data/CSVs/ctu13_clients \
+    --output-dir data/CSVs/ctu13_heterogeneous \
+    --high-count 3 --medium-count 2 --low-count 2 \
+    --seed 42
+
+# 3. Create test set
+python create_heterogeneous_test_set.py \
+    --data-dir data/CSVs/ctu13_heterogeneous \
+    --output data/CSVs/ctu13_test_set.csv \
+    --test-size 10000 --benign-ratio 0.2 --seed 42
+```
+
+### Scenario 2: Real Honeypot Dataset
+
+**Source**: Preprocessed honeypot captures (2017)
+- **Format**: CSV files (ready for ML)
+- **Features**: 100+ engineered features (flow stats, IAT, payload, flags, etc.)
+- **Attack Types**: 13+ diverse types (DoS, DDoS, web attacks, brute force, etc.)
+- **Clients**: 12 heterogeneous clients (3 high-quality, 2 medium-quality, 7 compromised)
+- **Total Training Samples**: ~140,000 samples
+
+**Preparation**:
+```bash
+# 1. Create heterogeneous clients from source files
+python create_heterogeneous_clients.py \
+    --data-dir data/CSVs \
+    --output-dir data/CSVs/heterogeneous \
+    --high-count 3 --medium-count 2 --compromised-count 7 \
+    --seed 42
+
+# 2. Create test set
+python create_heterogeneous_test_set.py \
+    --data-dir data/CSVs/heterogeneous \
+    --output data/CSVs/heterogeneous_test_set.csv \
+    --test-size 10000 --benign-ratio 0.2 --seed 42
+```
+
+### Data Format
 
 Each CSV file should contain:
 - **Features**: Network traffic features (duration, bytes, flags, etc.)
@@ -180,6 +289,8 @@ Example columns:
 - `flow_id`, `timestamp`, `src_ip`, `src_port`, `dst_ip`, `dst_port`, `protocol`
 - Traffic features: `duration`, `packets_count`, `bytes_rate`, etc.
 - `label` or `Label`: `BENIGN` or attack type (e.g., `DoS_Hulk`, `PortScan`)
+
+**Note**: Original dataset files contain both benign and attack traffic. Heterogeneous clients with varying quality tiers are created synthetically from these clean source files.
 
 ## How It Works
 
@@ -233,9 +344,10 @@ When running multiple rounds (`--num-rounds > 1`), trust scores evolve dynamical
 - Model parameters are averaged with equal weights
 
 **Trust-Aware Federated Learning**:
-- Clients are weighted by their trust scores
+- Clients are weighted by their trust scores using optimized sub-linear weighting
 - Higher trust = greater influence on global model
-- Formula: `weight_i = trust_i / sum(all_trust_scores)`
+- Formula: `weight_i = (trust_i^β) / sum(all_trust_j^β)` where β = 0.8 (optimized)
+- Uses **trust-weighted data retraining**: collects data samples proportionally to trust scores, then retrains global model
 - In multi-round mode: Uses updated trust scores from TrustManager (adaptive trust)
 - In single-round mode: Uses initial trust scores from validation accuracy (static trust)
 
@@ -388,14 +500,25 @@ The `experiment_results.json` file contains:
 - If trust-aware < FedAvg, investigate trust calculation
 
 **Expected Results** (Realistic Evaluation):
+
+**CTU-13 Benchmark Dataset**:
 ```
-Trust-Aware > Centralized > FedAvg
+Trust-Aware (73.70%) > Centralized (72.58%) > FedAvg (48.71%)
 ```
 
-**Note**: In realistic scenarios with heterogeneous client quality and proper test sets (no data leakage), Trust-Aware typically outperforms both Centralized and FedAvg because:
-- Trust-Aware filters out low-quality clients effectively
-- Centralized suffers from including all corrupted data
-- FedAvg treats all clients equally, diluting the model with bad data
+**Real Honeypot Dataset**:
+```
+Trust-Aware (78.86%) > Centralized (62.51%) > FedAvg (61.07%)
+```
+
+**Cross-Dataset Pattern**: Trust-Aware consistently outperforms both baselines across both scenarios, demonstrating robust generalization.
+
+**Why Trust-Aware Outperforms**:
+- **Trust-Aware**: Filters out low-quality clients effectively using trust-weighted aggregation (trust$^{0.8}$)
+- **Centralized**: Suffers from including all corrupted data without filtering
+- **FedAvg**: Treats all clients equally, diluting the model with bad data
+
+**Key Finding**: Trust-Aware achieves the lowest False Negative Rate in both scenarios (8.30% on CTU-13, 11.76% on honeypot), which is critical for operational IDS deployment.
 
 #### 3. Trust Analysis (Multi-Round Mode)
 
