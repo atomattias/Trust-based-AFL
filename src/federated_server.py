@@ -252,8 +252,9 @@ class TrustAwareAggregator:
         # This ensures compromised clients contribute minimally, high-trust clients dominate
         
         # NO THRESHOLD: Use all clients to maintain data diversity
-        # Apply trust^2 weighting for balanced differentiation
-        trust_powered = np.maximum(trust_scores, 0.0) ** 0.8  # No filtering, just ensure non-negative
+        # Apply trust^β weighting for balanced differentiation
+        # Using β=0.8 (sub-linear) to balance differentiation with stability
+        trust_powered = np.maximum(trust_scores, 0.0) ** 0.8  # Sub-linear weighting
         
         total_trust_powered = np.sum(trust_powered)
         if total_trust_powered == 0:

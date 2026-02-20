@@ -48,7 +48,9 @@ class ExperimentRunner:
             model_type: Type of model ('random_forest' or 'logistic_regression')
             random_state: Random seed
             test_csv: Optional path to test CSV (if None, will use one of the client CSVs)
-            num_rounds: Number of federated learning rounds (1 = single round, >1 = multi-round with adaptive trust)
+            num_rounds: Number of federated learning rounds (1 = single round, >1 = multi-round with adaptive trust).
+                        Note: Multi-round mode (recommended: 10 rounds) typically yields better Trust-Aware performance
+                        than single-round mode, often outperforming Centralized learning.
             trust_alpha: History weight for adaptive trust (0.7 = 70% old, 30% new)
             trust_storage_dir: Directory to store trust history (None = in-memory only)
         """

@@ -207,38 +207,31 @@ class FederatedClient:
             logger.info(f"TRUST_CALC_DEBUG {self.client_id[:50]}: val_acc={val_acc:.4f}, "
                        f"train_acc={train_acc:.4f}, f1={f1_score:.4f}")
         
-        # Base trust: Use F1-score if available (handles class imbalance better)
-        # Otherwise use validation accuracy
-        base_trust = f1_score if f1_score > 0 else val_acc
+        # SIMPLIFIED TRUST CALCULATION: Use validation accuracy directly
+        # As stated in README: "Trust scores are computed as validation accuracy"
+        # This is simpler and more transparent than complex penalty systems
+        # Validation accuracy on clean validation set correctly reflects client quality:
+        # - High-quality clients (clean data) → high validation accuracy → high trust
+        # - Low-quality clients (corrupted training, clean validation) → low validation accuracy → low trust
+        # - Compromised clients (corrupted training, corrupted validation) → may have misleading high accuracy
         
-        # Penalty 1: Large train-val gap (indicates corruption or overfitting)
-        # If val_acc >> train_acc, model is suspicious
-        gap = val_acc - train_acc
-        if gap > 0.2:  # Lower threshold: any gap > 0.2 is suspicious
-            # More aggressive penalty: up to 0.7 reduction
-            gap_penalty = min(0.7, gap * 1.2)  # Penalty up to 0.7
-            base_trust = base_trust - gap_penalty
+        # Use validation accuracy as base trust
+        base_trust = val_acc
         
-        # Penalty 2: Very low training accuracy (model learned nothing)
-        # If train_acc < 0.1, model can't learn from corrupted data
-        if train_acc < 0.1:
-            # EXTREME penalty: reduce trust by 90% (was 70%)
-            base_trust = base_trust * 0.1
-        
-        # Penalty 3: Check for majority class prediction
-        # If validation set has high class imbalance and high accuracy, suspicious
+        # Only apply minimal penalty for obvious majority class prediction
+        # This catches cases where model just predicts the majority class
         if self.y_val is not None:
             val_label_counts = Counter(self.y_val)
             if len(val_label_counts) > 0:
                 majority_count = max(val_label_counts.values())
                 majority_ratio = majority_count / len(self.y_val)
                 
-                # If majority class is >70% and accuracy is high, likely just predicting majority
-                # Lower threshold and stronger penalty
-                if majority_ratio > 0.7 and val_acc > 0.7:
-                    # Stronger penalty: reduce trust more aggressively
-                    penalty_factor = 1 - (majority_ratio - 0.7) * 3  # Penalty up to 0.6
-                    base_trust = base_trust * max(0.1, penalty_factor)  # Minimum 0.1 multiplier
+                # If validation set is highly imbalanced (>90% one class) and accuracy is very high (>95%),
+                # likely just predicting majority class - apply moderate penalty
+                if majority_ratio > 0.9 and val_acc > 0.95:
+                    # Moderate penalty: reduce trust by 20-30%
+                    penalty_factor = 0.75  # Reduce by 25%
+                    base_trust = base_trust * penalty_factor
         
         # Ensure trust score is in valid range
         self.trust_score = max(0.0, min(1.0, base_trust))
