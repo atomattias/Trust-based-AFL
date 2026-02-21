@@ -64,6 +64,10 @@ class FederatedClient:
         self.y_val = None
         self.X_features = None
         
+        # Multi-signal trust fusion tracking
+        self.accuracy_history = []  # Track validation accuracy across rounds
+        self.previous_parameters = None  # Track previous model parameters for drift calculation
+        
         # Performance history for adaptive trust (multi-round mode)
         self.performance_history: List[Dict[str, Any]] = []
         self.current_round = 0
@@ -276,6 +280,17 @@ class FederatedClient:
             })
         
         self.performance_history.append(round_metrics)
+        
+        # Track accuracy for multi-signal trust fusion
+        self.accuracy_history.append(self.val_metrics['accuracy'])
+        
+        # Store current model parameters for drift calculation in next round
+        if self.model is not None:
+            try:
+                self.previous_parameters = get_model_parameters(self.model, self.model_type)
+            except Exception:
+                # If parameter extraction fails, set to None
+                self.previous_parameters = None
     
     def get_consistency_score(self, window_size: int = 5) -> float:
         """
@@ -511,3 +526,96 @@ class FederatedClient:
             info.update({f'val_{k}': v for k, v in self.val_metrics.items()})
         
         return info
+    
+    def compute_multi_signal_trust_signals(self) -> Dict[str, float]:
+        """
+        Compute the four signals for multi-signal trust fusion:
+        1. Accuracy: Validation accuracy
+        2. Stability: Variance of accuracy across rounds (inverse - lower variance = higher stability)
+        3. Drift: Norm of parameter changes (inverse - lower drift = better)
+        4. Uncertainty: Prediction entropy (inverse - lower entropy = higher confidence)
+        
+        Returns:
+            Dictionary with signal values: {'accuracy': float, 'stability': float, 'drift': float, 'uncertainty': float}
+        """
+        signals = {}
+        
+        # Signal 1: Accuracy (validation accuracy)
+        if self.val_metrics is None:
+            self.evaluate()
+        signals['accuracy'] = self.val_metrics['accuracy']
+        
+        # Signal 2: Stability (inverse of variance of accuracy history)
+        if len(self.accuracy_history) >= 2:
+            variance = np.var(self.accuracy_history)
+            # Convert variance to stability score (inverse relationship)
+            # Max variance for binary accuracy is 0.25
+            stability = max(0.0, 1.0 - (variance / 0.25))
+        else:
+            # Not enough history, assume stable
+            stability = 1.0
+        signals['stability'] = stability
+        
+        # Signal 3: Drift (norm of parameter changes)
+        if self.model is not None and self.previous_parameters is not None:
+            try:
+                current_params = get_model_parameters(self.model, self.model_type)
+                # Compute norm of parameter change
+                if isinstance(current_params, dict) and isinstance(self.previous_parameters, dict):
+                    # For dict parameters, compute norm of differences
+                    param_diff_norm = 0.0
+                    for key in current_params:
+                        if key in self.previous_parameters:
+                            if isinstance(current_params[key], np.ndarray):
+                                diff = current_params[key] - self.previous_parameters[key]
+                                param_diff_norm += np.linalg.norm(diff) ** 2
+                            elif isinstance(current_params[key], (int, float)):
+                                param_diff_norm += (current_params[key] - self.previous_parameters[key]) ** 2
+                    param_diff_norm = np.sqrt(param_diff_norm)
+                else:
+                    # Fallback: simple difference if not dict
+                    param_diff_norm = abs(current_params - self.previous_parameters) if isinstance(current_params, (int, float)) else 1.0
+                
+                # Convert drift to stability score (inverse relationship)
+                # Normalize drift (assuming max reasonable drift is 10.0)
+                drift_penalty = min(1.0, param_diff_norm / 10.0)
+                drift_score = 1.0 - drift_penalty
+            except Exception:
+                # If drift calculation fails, assume no drift (stable)
+                drift_score = 1.0
+        else:
+            # First round or no previous parameters, assume no drift
+            drift_score = 1.0
+        signals['drift'] = drift_score
+        
+        # Signal 4: Uncertainty (prediction entropy - inverse)
+        if self.model is not None and self.X_val is not None and len(self.X_val) > 0:
+            try:
+                # Get prediction probabilities
+                if hasattr(self.model, 'predict_proba'):
+                    proba = self.model.predict_proba(self.X_val)
+                    # Compute entropy: -sum(p * log(p)) for each sample, then average
+                    # Add small epsilon to avoid log(0)
+                    epsilon = 1e-10
+                    proba = np.clip(proba, epsilon, 1.0 - epsilon)
+                    entropy_per_sample = -np.sum(proba * np.log(proba), axis=1)
+                    avg_entropy = np.mean(entropy_per_sample)
+                else:
+                    # Model doesn't support predict_proba, use prediction confidence
+                    # For binary classification, entropy ranges from 0 (certain) to log(2) ≈ 0.693 (uncertain)
+                    avg_entropy = 0.5  # Assume moderate uncertainty
+                
+                # Convert entropy to confidence score (inverse relationship)
+                # Max entropy for binary classification is log(2) ≈ 0.693
+                max_entropy = np.log(2)
+                uncertainty_penalty = min(1.0, avg_entropy / max_entropy)
+                uncertainty_score = 1.0 - uncertainty_penalty
+            except Exception:
+                # If uncertainty calculation fails, assume moderate uncertainty
+                uncertainty_score = 0.5
+        else:
+            # No validation data or model, assume moderate uncertainty
+            uncertainty_score = 0.5
+        signals['uncertainty'] = uncertainty_score
+        
+        return signals

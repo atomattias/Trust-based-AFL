@@ -93,8 +93,23 @@ class FedAvgAggregator:
             if X_aggregated_list:
                 # Combine all client data
                 import pandas as pd
-                X_global = pd.concat(X_aggregated_list, ignore_index=True)
+                # Ensure all DataFrames have the same columns before concatenating
+                all_columns = set()
+                for df in X_aggregated_list:
+                    all_columns.update(df.columns)
+                all_columns = sorted(list(all_columns))
+                
+                # Reindex all DataFrames to have the same columns (missing columns will be NaN)
+                X_aggregated_list_aligned = [df.reindex(columns=all_columns) for df in X_aggregated_list]
+                
+                X_global = pd.concat(X_aggregated_list_aligned, ignore_index=True)
                 y_global = pd.concat(y_aggregated_list, ignore_index=True)
+                
+                # Fill any NaN values that may have been created by missing columns
+                X_global = X_global.fillna(0)
+                
+                # Store feature columns for test set alignment
+                self.training_feature_columns = X_global.columns.tolist()
                 
                 print(f"  Retraining global model on aggregated data: {len(X_global)} samples")
                 print(f"    Benign: {(y_global == 0).sum()} ({(y_global == 0).sum()/len(y_global)*100:.1f}%)")
@@ -251,10 +266,12 @@ class TrustAwareAggregator:
         # 2. Apply trust^3 for remaining clients (much stronger differentiation)
         # This ensures compromised clients contribute minimally, high-trust clients dominate
         
-        # NO THRESHOLD: Use all clients to maintain data diversity
-        # Apply trust^β weighting for balanced differentiation
-        # Using β=0.8 (sub-linear) to balance differentiation with stability
-        trust_powered = np.maximum(trust_scores, 0.0) ** 0.8  # Sub-linear weighting
+        # Trust exponent (β) controls how much high-trust clients are weighted:
+        # β=0.8 (sub-linear): Balanced, stable (optimal - tested and confirmed)
+        # β=0.85-0.9: Slightly more differentiation (tested, performs worse)
+        # β=1.0+ (linear/super-linear): Strong differentiation, less stable
+        # Original β=0.8 is optimal after testing
+        trust_powered = np.maximum(trust_scores, 0.0) ** 0.8  # Sub-linear weighting (optimal)
         
         total_trust_powered = np.sum(trust_powered)
         if total_trust_powered == 0:
@@ -315,8 +332,23 @@ class TrustAwareAggregator:
             if X_aggregated_list:
                 # Combine all client data (already weighted by trust through sampling)
                 import pandas as pd
-                X_global = pd.concat(X_aggregated_list, ignore_index=True)
+                # Ensure all DataFrames have the same columns before concatenating
+                all_columns = set()
+                for df in X_aggregated_list:
+                    all_columns.update(df.columns)
+                all_columns = sorted(list(all_columns))
+                
+                # Reindex all DataFrames to have the same columns (missing columns will be NaN)
+                X_aggregated_list_aligned = [df.reindex(columns=all_columns) for df in X_aggregated_list]
+                
+                X_global = pd.concat(X_aggregated_list_aligned, ignore_index=True)
                 y_global = pd.concat(y_aggregated_list, ignore_index=True)
+                
+                # Fill any NaN values that may have been created by missing columns
+                X_global = X_global.fillna(0)
+                
+                # Store feature columns for test set alignment
+                self.training_feature_columns = X_global.columns.tolist()
                 
                 print(f"  Retraining global model on trust-weighted aggregated data: {len(X_global)} samples")
                 print(f"    Benign: {(y_global == 0).sum()} ({(y_global == 0).sum()/len(y_global)*100:.1f}%)")
@@ -736,7 +768,9 @@ class TrustManager:
         decay_rate: float = 0.95,
         anomaly_threshold: float = 0.2,
         initial_trust: float = 0.5,
-        storage_dir: Optional[str] = None
+        storage_dir: Optional[str] = None,
+        use_multi_signal: bool = False,
+        lambda_weights: Optional[Dict[str, float]] = None
     ):
         """
         Initialize the TrustManager.
@@ -747,12 +781,27 @@ class TrustManager:
             anomaly_threshold: Threshold for detecting sudden trust drops
             initial_trust: Initial trust score for new clients
             storage_dir: Directory to store trust history (None = in-memory only)
+            use_multi_signal: If True, use multi-signal trust fusion instead of simple validation accuracy
+            lambda_weights: Dictionary with lambda weights for multi-signal fusion:
+                           {'lambda1': float, 'lambda2': float, 'lambda3': float, 'lambda4': float}
+                           Default: {1.0, 0.3, 0.2, 0.2} for accuracy, stability, drift, uncertainty
         """
         self.alpha = alpha
         self.decay_rate = decay_rate
         self.anomaly_threshold = anomaly_threshold
         self.initial_trust = initial_trust
         self.storage_dir = storage_dir
+        self.use_multi_signal = use_multi_signal
+        
+        # Multi-signal trust fusion weights (default values)
+        if lambda_weights is None:
+            lambda_weights = {
+                'lambda1': 1.0,  # Accuracy weight
+                'lambda2': 0.3,  # Stability weight (penalty for variance)
+                'lambda3': 0.2,  # Drift weight (penalty for parameter changes)
+                'lambda4': 0.2   # Uncertainty weight (reward for confidence)
+            }
+        self.lambda_weights = lambda_weights
         
         # Dictionary mapping client_id to TrustHistory
         self.trust_histories: Dict[str, TrustHistory] = {}
@@ -774,29 +823,77 @@ class TrustManager:
             self.trust_histories[client_id] = TrustHistory(client_id, trust)
             logger.info(f"Initialized trust for new client: {client_id}, Initial trust: {trust:.4f}")
     
+    def compute_multi_signal_trust(
+        self,
+        signals: Dict[str, float]
+    ) -> float:
+        """
+        Compute trust score using multi-signal fusion.
+        
+        Formula: S_i^r = λ1 * Acc_i^r - λ2 * Var(Acc_i^(1:r)) - λ3 * ||Δ_i^r|| + λ4 * (1 - Entropy_i^r)
+        
+        Args:
+            signals: Dictionary with signal values {'accuracy': float, 'stability': float, 'drift': float, 'uncertainty': float}
+            
+        Returns:
+            Normalized trust score in [0, 1]
+        """
+        # Extract signals
+        accuracy = signals.get('accuracy', 0.0)
+        stability = signals.get('stability', 1.0)  # Higher is better
+        drift = signals.get('drift', 1.0)  # Higher is better (lower drift)
+        uncertainty = signals.get('uncertainty', 0.5)  # Higher is better (lower entropy)
+        
+        # Compute multi-signal score
+        # Note: stability and drift are already inverted (higher = better)
+        # uncertainty is already inverted (higher = more confident)
+        S = (
+            self.lambda_weights['lambda1'] * accuracy +
+            self.lambda_weights['lambda2'] * stability +
+            self.lambda_weights['lambda3'] * drift +
+            self.lambda_weights['lambda4'] * uncertainty
+        )
+        
+        # Normalize to [0, 1] range
+        # Maximum possible score (all signals = 1.0)
+        max_score = sum(self.lambda_weights.values())
+        # Minimum possible score (all signals = 0.0)
+        min_score = 0.0
+        
+        if max_score > min_score:
+            S_normalized = (S - min_score) / (max_score - min_score)
+        else:
+            S_normalized = 0.5  # Fallback
+        
+        # Ensure in valid range
+        S_normalized = max(0.0, min(1.0, S_normalized))
+        
+        return S_normalized
+    
     def update_trust(
         self,
         client_id: str,
         round_num: int,
         computed_trust: float,
-        performance_metrics: Optional[Dict[str, Any]] = None
+        performance_metrics: Optional[Dict[str, Any]] = None,
+        multi_signal_signals: Optional[Dict[str, float]] = None
     ) -> float:
         """
         Update trust score for a client using adaptive trust formula.
         
-        Formula: trust_new = α × trust_old + (1-α) × computed_trust
+        If use_multi_signal=True:
+            Formula: S_i^r = λ1*Acc - λ2*Var - λ3*||Δ|| + λ4*(1-Entropy)
+            Then: trust_new = α × trust_old + (1-α) × S_normalized
         
-        Note: computed_trust comes from FederatedClient.compute_trust() which includes:
-        - F1-score as base (handles class imbalance)
-        - Gap penalty (val_acc >> train_acc)
-        - Train accuracy penalty (train_acc < 0.1)
-        - Majority class prediction penalty
+        Otherwise (simple mode):
+            Formula: trust_new = α × trust_old + (1-α) × computed_trust
         
         Args:
             client_id: Client identifier
             round_num: Current round number
-            computed_trust: Computed trust score from improved multi-factor calculation (0-1)
+            computed_trust: Computed trust score from simple validation accuracy (0-1)
             performance_metrics: Additional performance metrics (optional)
+            multi_signal_signals: Dictionary with multi-signal values (if use_multi_signal=True)
             
         Returns:
             Updated trust score
@@ -809,6 +906,15 @@ class TrustManager:
         
         # Get previous trust score
         old_trust = history.get_latest_trust()
+        
+        # Use multi-signal trust fusion if enabled
+        if self.use_multi_signal and multi_signal_signals is not None:
+            # Compute trust using multi-signal fusion
+            computed_trust = self.compute_multi_signal_trust(multi_signal_signals)
+            logger.debug(
+                f"Multi-signal trust - Client: {client_id}, "
+                f"Signals: {multi_signal_signals}, Computed: {computed_trust:.4f}"
+            )
         
         # For first round (only initial round 0 exists) or very low computed trust, use computed trust directly
         # This ensures compromised clients are immediately identified
