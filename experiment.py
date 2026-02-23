@@ -15,6 +15,13 @@ import numpy as np
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
+# For statistical tests
+try:
+    from scipy import stats
+except ImportError:
+    stats = None
+    print("Warning: scipy not available. Statistical tests will be skipped.")
+
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
@@ -38,7 +45,8 @@ class ExperimentRunner:
         test_csv: Optional[str] = None,
         num_rounds: int = 1,
         trust_alpha: float = 0.7,
-        trust_storage_dir: Optional[str] = None
+        trust_storage_dir: Optional[str] = None,
+        use_multi_signal: bool = False
     ):
         """
         Initialize the experiment runner.
@@ -75,13 +83,30 @@ class ExperimentRunner:
             
             # Create TrustManager with config or defaults
             trust_mgr_config = trust_config.get('trust_manager', {})
+            
+            # Get lambda weights from config if available
+            lambda_weights = None
+            if use_multi_signal:
+                multi_signal_config = trust_config.get('multi_signal', {})
+                lambda_weights = {
+                    'lambda1': multi_signal_config.get('lambda1', 1.0),  # Accuracy
+                    'lambda2': multi_signal_config.get('lambda2', 0.3),  # Stability
+                    'lambda3': multi_signal_config.get('lambda3', 0.2),  # Drift
+                    'lambda4': multi_signal_config.get('lambda4', 0.2)   # Uncertainty
+                }
+            
             self.trust_manager = TrustManager(
                 alpha=trust_alpha if trust_alpha != 0.7 else trust_mgr_config.get('alpha', 0.7),
                 decay_rate=trust_mgr_config.get('decay_rate', 0.95),
                 anomaly_threshold=trust_mgr_config.get('anomaly_threshold', 0.2),
                 initial_trust=trust_mgr_config.get('initial_trust', 0.5),
-                storage_dir=trust_storage_dir
+                storage_dir=trust_storage_dir,
+                use_multi_signal=use_multi_signal,
+                lambda_weights=lambda_weights
             )
+            
+            # Store use_multi_signal flag
+            self.use_multi_signal = use_multi_signal
             
             # Apply any additional config
             apply_trust_config(self.trust_manager, trust_config)
@@ -90,6 +115,7 @@ class ExperimentRunner:
             self.trust_manager.load_all_trust_histories()
         else:
             self.trust_manager = None
+            self.use_multi_signal = False
         
     def discover_client_files(self) -> List[str]:
         """
@@ -321,8 +347,20 @@ class ExperimentRunner:
             else:
                 client_qualities.append('unknown')
         
-        X_combined = pd.concat(all_X_train, ignore_index=True)
+        # Ensure all DataFrames have the same columns before concatenating
+        all_columns = set()
+        for df in all_X_train:
+            all_columns.update(df.columns)
+        all_columns = sorted(list(all_columns))
+        
+        # Reindex all DataFrames to have the same columns (missing columns will be NaN)
+        all_X_train_aligned = [df.reindex(columns=all_columns) for df in all_X_train]
+        
+        X_combined = pd.concat(all_X_train_aligned, ignore_index=True)
         y_combined = pd.concat(all_y_train, ignore_index=True)
+        
+        # Fill any NaN values that may have been created by missing columns
+        X_combined = X_combined.fillna(0)
         
         print(f"Combined dataset: {len(X_combined)} samples")
         print(f"Class distribution: {(y_combined == 0).sum()} benign, {(y_combined == 1).sum()} attack")
@@ -349,9 +387,13 @@ class ExperimentRunner:
         
         print(f"Training accuracy: {train_metrics['train_accuracy']:.4f}")
         
+        # Align test set features with training features
+        print("\nAligning test set features with training features...")
+        X_test_aligned = X_test.reindex(columns=X_combined.columns, fill_value=0)
+        
         # Evaluate on test set
         print("\nEvaluating on test set...")
-        results = evaluate_model_on_test(centralized_model, X_test, y_test)
+        results = evaluate_model_on_test(centralized_model, X_test_aligned, y_test)
         
         print(f"\nTest Accuracy: {results['accuracy']:.4f}")
         print(f"Test F1-Score: {results['f1_score']:.4f}")
@@ -410,8 +452,21 @@ class ExperimentRunner:
         aggregator = FedAvgAggregator(model_type=self.model_type)
         global_model = aggregator.aggregate(self.client_updates, use_retraining=True)
         
+        # Align test set features with training features (use aggregator's training columns)
+        if hasattr(aggregator, 'training_feature_columns') and aggregator.training_feature_columns:
+            X_test_aligned = X_test.reindex(columns=aggregator.training_feature_columns, fill_value=0)
+        elif len(self.clients) > 0:
+            # Fallback: use all unique columns from all clients
+            all_train_columns = set()
+            for client in self.clients:
+                all_train_columns.update(client.X_train.columns)
+            all_train_columns = sorted(list(all_train_columns))
+            X_test_aligned = X_test.reindex(columns=all_train_columns, fill_value=0)
+        else:
+            X_test_aligned = X_test
+        
         # Evaluate global model
-        results = evaluate_model_on_test(global_model, X_test, y_test)
+        results = evaluate_model_on_test(global_model, X_test_aligned, y_test)
         
         print(f"\nTest Accuracy: {results['accuracy']:.4f}")
         print(f"Test F1-Score: {results['f1_score']:.4f}")
@@ -495,7 +550,13 @@ class ExperimentRunner:
         print(f"  Trust-weighted: High-trust clients get more, low-trust get less")
         
         # Evaluate global model
-        results = evaluate_model_on_test(global_model, X_test, y_test)
+        # Align test set features with training features (use first client's features as reference)
+        if len(self.clients) > 0:
+            X_test_aligned = X_test.reindex(columns=self.clients[0].X_train.columns, fill_value=0)
+        else:
+            X_test_aligned = X_test
+        
+        results = evaluate_model_on_test(global_model, X_test_aligned, y_test)
         
         print(f"\nTest Accuracy: {results['accuracy']:.4f}")
         print(f"Test F1-Score: {results['f1_score']:.4f}")
@@ -583,11 +644,22 @@ class ExperimentRunner:
                 
                 # Use the computed trust (from improved calculation) for adaptive trust update
                 # The adaptive formula smooths the improved trust over rounds, not just validation accuracy
+                # Get multi-signal signals if enabled
+                multi_signal_signals = None
+                if self.use_multi_signal:
+                    try:
+                        multi_signal_signals = client.compute_multi_signal_trust_signals()
+                    except Exception as e:
+                        logger.warning(f"Failed to compute multi-signal trust for {client.client_id}: {e}")
+                        # Fallback to simple trust
+                        multi_signal_signals = None
+                
                 updated_trust = self.trust_manager.update_trust(
                     client.client_id,
                     round_num,
                     computed_trust,  # Use computed trust instead of raw validation accuracy
-                    perf_metrics
+                    perf_metrics,
+                    multi_signal_signals=multi_signal_signals
                 )
                 
                 # Update client's trust score
@@ -642,7 +714,12 @@ class ExperimentRunner:
                 update['trust'] = all_trust.get(update['client_id'], update.get('trust', 0.5))
             
             # Use EnsembleAggregator with trust-weighted voting
-            ensemble = EnsembleAggregator(model_type=self.model_type, aggregation_method='weighted_voting')
+            # Beta parameter controls sub-linear weighting (default: 0.8, optimal)
+            ensemble = EnsembleAggregator(
+                model_type=self.model_type, 
+                aggregation_method='weighted_voting',
+                beta=0.8  # Sub-linear trust weighting (consistent with TrustAwareAggregator)
+            )
             ensemble.aggregate(self.client_updates)
             global_model = ensemble  # Store ensemble for potential use
             
@@ -673,7 +750,21 @@ class ExperimentRunner:
             trust_manager=self.trust_manager
         )
         final_global_model = final_aggregator.aggregate(self.client_updates, use_retraining=True)
-        results = evaluate_model_on_test(final_global_model, X_test, y_test)
+        
+        # Align test set features with training features (use aggregator's training columns)
+        if hasattr(final_aggregator, 'training_feature_columns') and final_aggregator.training_feature_columns:
+            X_test_aligned = X_test.reindex(columns=final_aggregator.training_feature_columns, fill_value=0)
+        elif len(self.clients) > 0:
+            # Fallback: use all unique columns from all clients
+            all_train_columns = set()
+            for client in self.clients:
+                all_train_columns.update(client.X_train.columns)
+            all_train_columns = sorted(list(all_train_columns))
+            X_test_aligned = X_test.reindex(columns=all_train_columns, fill_value=0)
+        else:
+            X_test_aligned = X_test
+        
+        results = evaluate_model_on_test(final_global_model, X_test_aligned, y_test)
         
         # Add trust statistics to results
         trust_stats = self.trust_manager.get_statistics()
@@ -915,21 +1006,148 @@ def main():
                        help='History weight for adaptive trust (0.7 = 70%% old, 30%% new)')
     parser.add_argument('--trust-storage-dir', type=str, default=None,
                        help='Directory to store trust history (default: results/trust_history)')
+    parser.add_argument('--multi-signal-trust', action='store_true',
+                       help='Use multi-signal trust fusion (accuracy, stability, drift, uncertainty) instead of simple validation accuracy')
+    parser.add_argument('--num-trials', type=int, default=1,
+                       help='Number of independent trials for statistical validation (default: 1, recommended: 5-10)')
     
     args = parser.parse_args()
     
-    # Run experiment
-    runner = ExperimentRunner(
-        data_dir=args.data_dir,
-        model_type=args.model_type,
-        random_state=args.random_state,
-        test_csv=args.test_csv,
-        num_rounds=args.num_rounds,
-        trust_alpha=args.trust_alpha,
-        trust_storage_dir=args.trust_storage_dir
-    )
-    
-    results = runner.run_experiment(num_clients=args.num_clients)
+    # Run multiple trials if requested
+    if args.num_trials > 1:
+        print(f"\n{'='*60}")
+        print(f"Running {args.num_trials} independent trials for statistical validation")
+        print(f"{'='*60}\n")
+        
+        all_trial_results = []
+        
+        for trial in range(args.num_trials):
+            print(f"\n{'='*60}")
+            print(f"Trial {trial + 1}/{args.num_trials} (Seed: {args.random_state + trial})")
+            print(f"{'='*60}\n")
+            
+            # Create runner with different seed for each trial
+            runner = ExperimentRunner(
+                data_dir=args.data_dir,
+                model_type=args.model_type,
+                random_state=args.random_state + trial,  # Different seed per trial
+                test_csv=args.test_csv,
+                num_rounds=args.num_rounds,
+                trust_alpha=args.trust_alpha,
+                trust_storage_dir=args.trust_storage_dir,
+                use_multi_signal=args.multi_signal_trust
+            )
+            
+            trial_results = runner.run_experiment(num_clients=args.num_clients)
+            all_trial_results.append(trial_results)
+        
+        # Compute statistics across trials
+        print("\n" + "="*60)
+        print("STATISTICAL SUMMARY (Across All Trials)")
+        print("="*60)
+        
+        # Extract metrics for each approach
+        metrics = ['accuracy', 'f1_score', 'precision', 'recall', 'false_positive_rate', 'false_negative_rate']
+        approach_names = ['centralized', 'federated_equal_weight', 'trust_aware']
+        
+        # Compute mean and std for each metric and approach
+        stats_summary = {}
+        for approach in approach_names:
+            stats_summary[approach] = {}
+            for metric in metrics:
+                values = [trial_results[approach].get(metric, 0) for trial_results in all_trial_results 
+                         if approach in trial_results and metric in trial_results[approach]]
+                if values:
+                    stats_summary[approach][metric] = {
+                        'mean': np.mean(values),
+                        'std': np.std(values),
+                        'min': np.min(values),
+                        'max': np.max(values)
+                    }
+        
+        # Print statistical summary table
+        print(f"\n{'Metric':<25} {'Centralized':<20} {'FedAvg':<20} {'Trust-Aware':<20}")
+        print("-" * 85)
+        for metric in metrics:
+            metric_display = metric.replace('_', ' ').title()
+            row = f"{metric_display:<25}"
+            for approach in approach_names:
+                if approach in stats_summary and metric in stats_summary[approach]:
+                    mean_val = stats_summary[approach][metric]['mean']
+                    std_val = stats_summary[approach][metric]['std']
+                    row += f" {mean_val:.4f}±{std_val:.4f}  "
+                else:
+                    row += " " * 20
+            print(row)
+        
+        # Save statistical summary
+        stats_dict = {
+            'num_trials': args.num_trials,
+            'random_seeds': [args.random_state + i for i in range(args.num_trials)],
+            'statistics': stats_summary,
+            'all_trial_results': all_trial_results
+        }
+        
+        os.makedirs('results/reports', exist_ok=True)
+        with open('results/reports/statistical_summary.json', 'w') as f:
+            json.dump(stats_dict, f, indent=2, default=str)
+        print(f"\n✓ Statistical summary saved to results/reports/statistical_summary.json")
+        
+        # Perform statistical significance tests (t-test)
+        print("\n" + "="*60)
+        print("STATISTICAL SIGNIFICANCE TESTS (t-test)")
+        print("="*60)
+        
+        if stats is None:
+            print("Warning: scipy not available. Skipping statistical tests.")
+            print("Install scipy with: pip install scipy")
+        else:
+            def perform_ttest(values1, values2, name1, name2, metric_name):
+                """Perform t-test between two groups."""
+                if len(values1) < 2 or len(values2) < 2:
+                    return None, None
+                t_stat, p_value = stats.ttest_ind(values1, values2)
+                significance = "***" if p_value < 0.001 else "**" if p_value < 0.01 else "*" if p_value < 0.05 else "ns"
+                print(f"\n{metric_name}: {name1} vs {name2}")
+                print(f"  t-statistic: {t_stat:.4f}, p-value: {p_value:.4f} {significance}")
+                return t_stat, p_value
+            
+            # Compare Trust-Aware vs FedAvg and vs Centralized
+            for metric in metrics:
+                if 'trust_aware' in stats_summary and metric in stats_summary['trust_aware']:
+                    trust_values = [trial_results['trust_aware'].get(metric, 0) 
+                                  for trial_results in all_trial_results 
+                                  if 'trust_aware' in trial_results and metric in trial_results['trust_aware']]
+                    
+                    if 'federated_equal_weight' in stats_summary and metric in stats_summary['federated_equal_weight']:
+                        fedavg_values = [trial_results['federated_equal_weight'].get(metric, 0) 
+                                       for trial_results in all_trial_results 
+                                       if 'federated_equal_weight' in trial_results and metric in trial_results['federated_equal_weight']]
+                        perform_ttest(trust_values, fedavg_values, "Trust-Aware", "FedAvg", metric.replace('_', ' ').title())
+                    
+                    if 'centralized' in stats_summary and metric in stats_summary['centralized']:
+                        centralized_values = [trial_results['centralized'].get(metric, 0) 
+                                            for trial_results in all_trial_results 
+                                            if 'centralized' in trial_results and metric in trial_results['centralized']]
+                        perform_ttest(trust_values, centralized_values, "Trust-Aware", "Centralized", metric.replace('_', ' ').title())
+            
+            print("\nSignificance levels: *** p<0.001, ** p<0.01, * p<0.05, ns = not significant")
+        
+        results = stats_dict
+    else:
+        # Single trial (original behavior)
+        runner = ExperimentRunner(
+            data_dir=args.data_dir,
+            model_type=args.model_type,
+            random_state=args.random_state,
+            test_csv=args.test_csv,
+            num_rounds=args.num_rounds,
+            trust_alpha=args.trust_alpha,
+            trust_storage_dir=args.trust_storage_dir,
+            use_multi_signal=args.multi_signal_trust
+        )
+        
+        results = runner.run_experiment(num_clients=args.num_clients)
     
     print("\n" + "="*60)
     print("Experiment completed successfully!")

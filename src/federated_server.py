@@ -211,16 +211,18 @@ class TrustAwareAggregator:
     This is the proposed method that weights client contributions by their trust scores.
     """
     
-    def __init__(self, model_type: str = 'random_forest', trust_manager: Optional['TrustManager'] = None):
+    def __init__(self, model_type: str = 'random_forest', trust_manager: Optional['TrustManager'] = None, beta: float = 0.8):
         """
         Initialize the trust-aware aggregator.
         
         Args:
             model_type: Type of model ('random_forest' or 'logistic_regression')
             trust_manager: Optional TrustManager instance for adaptive trust (if None, uses trust from client updates)
+            beta: Trust exponent for sub-linear weighting (default: 0.8, optimal)
         """
         self.model_type = model_type
         self.trust_manager = trust_manager
+        self.beta = beta  # Trust exponent for sub-linear weighting
         self.global_model = None
         self.client_weights = None
     
@@ -271,7 +273,7 @@ class TrustAwareAggregator:
         # β=0.85-0.9: Slightly more differentiation (tested, performs worse)
         # β=1.0+ (linear/super-linear): Strong differentiation, less stable
         # Original β=0.8 is optimal after testing
-        trust_powered = np.maximum(trust_scores, 0.0) ** 0.8  # Sub-linear weighting (optimal)
+        trust_powered = np.maximum(trust_scores, 0.0) ** self.beta  # Sub-linear weighting (configurable)
         
         total_trust_powered = np.sum(trust_powered)
         if total_trust_powered == 0:
@@ -485,16 +487,18 @@ class EnsembleAggregator:
     This creates a meta-model that combines predictions from all client models.
     """
     
-    def __init__(self, model_type: str = 'random_forest', aggregation_method: str = 'weighted_voting'):
+    def __init__(self, model_type: str = 'random_forest', aggregation_method: str = 'weighted_voting', beta: float = 0.8):
         """
         Initialize the ensemble aggregator.
         
         Args:
             model_type: Type of model
             aggregation_method: 'weighted_voting' or 'equal_voting'
+            beta: Trust exponent for sub-linear weighting (default: 0.8, optimal)
         """
         self.model_type = model_type
         self.aggregation_method = aggregation_method
+        self.beta = beta  # Trust exponent for sub-linear weighting
         self.client_models = []
         self.client_weights = None
     
@@ -512,9 +516,16 @@ class EnsembleAggregator:
         
         if self.aggregation_method == 'weighted_voting':
             trust_scores = np.array([update['trust'] for update in client_updates])
-            total_trust = np.sum(trust_scores)
-            if total_trust > 0:
-                self.client_weights = trust_scores / total_trust
+            
+            # Apply beta exponentiation for sub-linear weighting (consistent with TrustAwareAggregator)
+            # β < 1: sub-linear (compresses trust disparities)
+            # β = 1: linear (standard weighted voting)
+            # β > 1: super-linear (amplifies trust disparities)
+            trust_powered = np.maximum(trust_scores, 0.0) ** self.beta
+            total_trust_powered = np.sum(trust_powered)
+            
+            if total_trust_powered > 0:
+                self.client_weights = trust_powered / total_trust_powered
             else:
                 self.client_weights = np.ones(len(client_updates)) / len(client_updates)
         else:

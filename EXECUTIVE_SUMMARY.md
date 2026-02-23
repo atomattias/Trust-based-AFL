@@ -21,11 +21,11 @@ TrustFed-Honeypot is evaluated on two complementary scenarios to demonstrate rob
 
 | Approach | Accuracy | F1-Score | Precision | Recall | FNR |
 |----------|----------|----------|-----------|--------|-----|
-| **Trust-Aware** | **73.70%** | **84.80%** | **78.86%** | **91.70%** | **8.30%** |
+| **Trust-Aware** (Multi-Signal) | **71.51%** | **83.17%** | **79.17%** | **87.60%** | **12.40%** |
 | FedAvg | 48.71% | 63.96% | 73.04% | 56.89% | 43.11% |
 | Centralized | 72.58% | 83.98% | 78.85% | 89.81% | 10.19% |
 
-**Improvements**: +24.99% accuracy vs FedAvg, +1.12% vs Centralized, +20.84% F1-Score vs FedAvg
+**Improvements**: +22.80% accuracy vs FedAvg, 98.5% of Centralized performance, +19.21% F1-Score vs FedAvg. Uses multi-signal trust fusion combining accuracy, stability, drift, and uncertainty signals.
 
 #### Scenario 2: Real Honeypot Dataset
 
@@ -261,10 +261,24 @@ Our experimental results provide strong evidence that **Trust-Aware Federated Le
 
 ### Trust Score Calculation
 
+TrustFed-Honeypot supports two trust calculation methods:
+
+**1. Simple Trust (Default)**:
 - **Initial Trust**: Validation accuracy on clean validation set
 - **Adaptive Trust**: Weighted moving average over rounds
   - Formula: `trust_new = α × trust_old + (1-α) × validation_accuracy`
-  - α = 0.7 (70% history, 30% current performance)
+  - α = 0.5-0.7 (history weight)
+
+**2. Multi-Signal Trust Fusion (Recommended)**:
+- Combines four behavioral indicators:
+  - **Accuracy**: Validation accuracy
+  - **Stability**: Variance of accuracy across rounds (inverse)
+  - **Drift**: Norm of parameter changes (inverse)
+  - **Uncertainty**: Prediction entropy (inverse)
+- Formula: `S_i^r = λ1×Acc - λ2×Var - λ3×||Δ|| + λ4×(1-Entropy)`
+- Weights: λ1=1.0, λ2=0.3, λ3=0.2, λ4=0.2 (optimized)
+- Then: `trust_new = α × trust_old + (1-α) × normalized_multi_signal_score`
+- **Benefits**: More robust trust estimation, better handles adversarial settings
 
 ### Experimental Setup
 
@@ -273,6 +287,8 @@ Our experimental results provide strong evidence that **Trust-Aware Federated Le
 - **Rounds**: 10 federated learning rounds with adaptive trust
 - **Test Set**: Heterogeneous test set (10,000 samples: 20% benign, 80% attacks)
 - **Test Set Source**: Completely separate from training data (no data leakage)
+- **Trust Method**: Multi-signal trust fusion (combines accuracy, stability, drift, uncertainty)
+- **Trust Weights**: λ1=1.0, λ2=0.3, λ3=0.2, λ4=0.2 (optimized)
 - **Trust Weighting**: trust^0.8 (sub-linear, optimized)
 - **Trust Alpha**: 0.5 (adaptive trust update)
 - **Aggregation Method**: Trust-weighted data retraining (not parameter averaging)

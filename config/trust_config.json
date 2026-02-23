@@ -6,6 +6,13 @@
     "initial_trust": 0.5,
     "storage_dir": "results/trust_history"
   },
+  "multi_signal": {
+    "lambda1": 1.0,
+    "lambda2": 0.3,
+    "lambda3": 0.2,
+    "lambda4": 0.2,
+    "description": "Multi-signal trust fusion weights: lambda1=accuracy, lambda2=stability, lambda3=drift, lambda4=uncertainty. Original baseline configuration (optimal)."
+  },
   "consistency": {
     "window_size": 5
   },
