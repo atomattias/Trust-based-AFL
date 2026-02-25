@@ -7,9 +7,15 @@ This module handles training machine learning models at each honeypot client.
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import SGDClassifier
+from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, confusion_matrix
 from typing import Dict, Tuple, Any, Optional
 import pandas as pd
+try:
+    from xgboost import XGBClassifier
+    XGBOOST_AVAILABLE = True
+except ImportError:
+    XGBOOST_AVAILABLE = False
 
 
 def train_local_model(
@@ -42,6 +48,44 @@ def train_local_model(
             random_state=random_state,
             n_jobs=-1
         )
+    elif model_type == 'mlp':
+        # MLP with reasonable architecture for intrusion detection
+        # Optimized for small feature space (6 features in CTU-13)
+        hidden_layer_sizes = model_kwargs.get('hidden_layer_sizes', (50,))  # Single layer optimized for 6 features
+        max_iter = model_kwargs.get('max_iter', 1000)  # More iterations
+        early_stopping = model_kwargs.get('early_stopping', True)  # Enable early stopping
+        learning_rate_init = model_kwargs.get('learning_rate_init', 0.001)
+        
+        model = MLPClassifier(
+            hidden_layer_sizes=hidden_layer_sizes,
+            activation='relu',
+            solver='adam',
+            alpha=0.0001,  # L2 regularization
+            batch_size='auto',
+            learning_rate='constant',
+            learning_rate_init=learning_rate_init,
+            max_iter=max_iter,
+            random_state=random_state,
+            early_stopping=early_stopping,
+            validation_fraction=0.1,
+            n_iter_no_change=10,
+            tol=1e-4
+        )
+    elif model_type == 'xgboost':
+        if not XGBOOST_AVAILABLE:
+            raise ImportError("XGBoost is not installed. Install it with: pip install xgboost")
+        n_estimators = model_kwargs.get('n_estimators', 100)
+        max_depth = model_kwargs.get('max_depth', 6)
+        learning_rate = model_kwargs.get('learning_rate', 0.1)
+        model = XGBClassifier(
+            n_estimators=n_estimators,
+            max_depth=max_depth,
+            learning_rate=learning_rate,
+            random_state=random_state,
+            n_jobs=-1,
+            eval_metric='logloss',
+            use_label_encoder=False
+        )
     elif model_type == 'logistic_regression':
         # Check for single class - Logistic Regression requires at least 2 classes
         unique_classes = y_train.unique() if hasattr(y_train, 'unique') else pd.Series(y_train).unique()
@@ -66,7 +110,7 @@ def train_local_model(
             n_jobs=-1
         )
     else:
-        raise ValueError(f"Unknown model_type: {model_type}. Use 'random_forest' or 'logistic_regression'")
+        raise ValueError(f"Unknown model_type: {model_type}. Use 'random_forest', 'logistic_regression', 'mlp', or 'xgboost'")
     
     # Train the model
     model.fit(X_train, y_train)
@@ -151,8 +195,21 @@ def get_model_parameters(model: Any, model_type: str) -> Dict[str, np.ndarray]:
             params['coef'] = np.zeros((1, n_features))
             params['intercept'] = np.zeros(1)
             params['classes'] = model.classes_ if hasattr(model, 'classes_') else np.array([0, 1])
+        elif model_type == 'mlp':
+            # For MLP, create dummy weights/biases (simplified)
+            params['coefs'] = [np.zeros((n_features, 10)), np.zeros((10, 1))]  # Simplified structure
+            params['intercepts'] = [np.zeros(10), np.zeros(1)]
+            params['n_layers'] = 2
+            params['n_outputs'] = 1
+            params['classes'] = model.classes_ if hasattr(model, 'classes_') else np.array([0, 1])
+            params['n_features'] = n_features
+        elif model_type in ['random_forest', 'xgboost']:
+            # For random forest and xgboost, create zero feature importances
+            params['feature_importances'] = np.zeros(n_features)
+            params['n_features'] = n_features
+            params['classes'] = model.classes_ if hasattr(model, 'classes_') else np.array([0, 1])
         else:
-            # For random forest, create zero feature importances
+            # Fallback
             params['feature_importances'] = np.zeros(n_features)
             params['n_features'] = n_features
             params['classes'] = model.classes_ if hasattr(model, 'classes_') else np.array([0, 1])
@@ -160,6 +217,19 @@ def get_model_parameters(model: Any, model_type: str) -> Dict[str, np.ndarray]:
     
     if model_type == 'random_forest':
         # For Random Forest, we aggregate feature importances
+        params['feature_importances'] = model.feature_importances_
+        params['n_features'] = len(model.feature_importances_)
+        params['classes'] = model.classes_
+    elif model_type == 'mlp':
+        # For MLP, we aggregate weights and biases from all layers
+        params['coefs'] = [layer.copy() for layer in model.coefs_]
+        params['intercepts'] = [layer.copy() for layer in model.intercepts_]
+        params['n_layers'] = len(model.coefs_)
+        params['n_outputs'] = model.n_outputs_
+        params['classes'] = model.classes_
+        params['n_features'] = model.n_features_in_
+    elif model_type == 'xgboost':
+        # For XGBoost, we aggregate feature importances (similar to Random Forest)
         params['feature_importances'] = model.feature_importances_
         params['n_features'] = len(model.feature_importances_)
         params['classes'] = model.classes_

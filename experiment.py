@@ -992,7 +992,7 @@ def main():
     parser.add_argument('--data-dir', type=str, default='data/CSVs',
                        help='Directory containing CSV files')
     parser.add_argument('--model-type', type=str, default='random_forest',
-                       choices=['random_forest', 'logistic_regression'],
+                       choices=['random_forest', 'logistic_regression', 'mlp', 'xgboost'],
                        help='Type of model to use')
     parser.add_argument('--num-clients', type=int, default=None,
                        help='Number of clients to use (None = use all)')

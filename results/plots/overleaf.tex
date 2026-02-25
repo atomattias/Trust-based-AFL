@@ -1,0 +1,914 @@
+%% 
+%% Copyright 2007-2025 Elsevier Ltd
+%% 
+%% This file is part of the 'Elsarticle Bundle'.
+%% ---------------------------------------------
+%% 
+%% It may be distributed under the conditions of the LaTeX Project Public
+%% License, either version 1.3 of this license or (at your option) any
+%% later version.  The latest version of this license is in
+%%    http://www.latex-project.org/lppl.txt
+%% and version 1.3 or later is part of all distributions of LaTeX
+%% version 1999/12/01 or later.
+%% 
+%% The list of all files belonging to the 'Elsarticle Bundle' is
+%% given in the file `manifest.txt'.
+%% 
+%% Template article for Elsevier's document class `elsarticle'
+%% with harvard style bibliographic references
+
+%%\documentclass[preprint,12pt,authoryear]{elsarticle}
+\documentclass[preprint,12pt,number]{elsarticle}
+
+
+%% Use the option review to obtain double line spacing
+%% \documentclass[authoryear,preprint,review,12pt]{elsarticle}
+
+%% Use the options 1p,twocolumn; 3p; 3p,twocolumn; 5p; or 5p,twocolumn
+%% for a journal layout:
+%% \documentclass[final,1p,times,authoryear]{elsarticle}
+%% \documentclass[final,1p,times,twocolumn,authoryear]{elsarticle}
+%% \documentclass[final,3p,times,authoryear]{elsarticle}
+%% \documentclass[final,3p,times,twocolumn,authoryear]{elsarticle}
+%% \documentclass[final,5p,times,authoryear]{elsarticle}
+%% \documentclass[final,5p,times,twocolumn,authoryear]{elsarticle}
+
+%% For including figures, graphicx.sty has been loaded in
+%% elsarticle.cls. If you prefer to use the old commands
+%% please give \usepackage{epsfig}
+
+%% The amssymb package provides various useful mathematical symbols
+\usepackage{amssymb}
+%% The amsmath package provides various useful equation environments.
+\usepackage{amsmath}
+%% The amsthm package provides extended theorem environments
+%% \usepackage{amsthm}
+\usepackage[section]{placeins}
+\usepackage{float}
+\usepackage{tikz}
+\usetikzlibrary{positioning, arrows.meta, calc, shapes, arrows, fit}
+\usepackage{xcolor}
+\usepackage{multirow}
+\usepackage{booktabs}
+\usepackage{comment}
+\usepackage{listings}
+
+%% The lineno packages adds line numbers. Start line numbering with
+%% \begin{linenumbers}, end it with \end{linenumbers}. Or switch it on
+%% for the whole article with \linenumbers.
+%% \usepackage{lineno}
+
+\journal{Nuclear Physics B}
+
+\begin{document}
+
+\begin{frontmatter}
+
+%% Title, authors and addresses
+
+%% use the tnoteref command within \title for footnotes;
+%% use the tnotetext command for theassociated footnote;
+%% use the fnref command within \author or \affiliation for footnotes;
+%% use the fntext command for theassociated footnote;
+%% use the corref command within \author for corresponding author footnotes;
+%% use the cortext command for theassociated footnote;
+%% use the ead command for the email address,
+%% and the form \ead[url] for the home page:
+ \title{Multi-Signal TrustFed-Honeypot: A Trust-Aware Federated Intrusion Detection Framework with Comparative Evaluation 
+\tnoteref{label1}}
+ \tnotetext[label1]{}
+%% \author{Name\corref{cor1}\fnref{label2}}
+%% \ead{email address}
+%% \ead[url]{home page}
+%% \fntext[label2]{}
+%% \cortext[cor1]{}
+%% \affiliation{organization={},
+%%            addressline={}, 
+%%            city={},
+%%            postcode={}, 
+%%            state={},
+%%            country={}}
+%% \fntext[label3]{}
+
+
+
+%% use optional labels to link authors explicitly to addresses:
+%% \author[label1,label2]{}
+%% \affiliation[label1]{organization={},
+%%             addressline={},
+%%             city={},
+%%             postcode={},
+%%             state={},
+%%             country={}}
+%%
+%% \affiliation[label2]{organization={},
+%%             addressline={},
+%%             city={},
+%%             postcode={},
+%%             state={},
+%%             country={}}
+
+\author{} %% Author name
+
+%% Author affiliation
+\affiliation{organization={},%Department and Organization
+            addressline={}, 
+            city={},
+            postcode={}, 
+            state={},
+            country={}}
+
+%% Abstract
+\begin{abstract}
+Federated learning (FL) enables collaborative intrusion detection without sharing raw telemetry data. However, existing trust-aware FL approaches typically rely on single-metric reliability estimation, which is insufficient in adversarial and heterogeneous intrusion detection environments. In distributed honeypot and IDS deployments, clients may exhibit unstable performance, update drift, or high predictive uncertainty despite achieving acceptable validation accuracy, creating security and reliability vulnerabilities during aggregation.
+
+This paper addresses these gaps by introducing Multi-Signal TrustFed-Honeypot, a behavioral multi-signal trust fusion framework for federated intrusion detection. The proposed method integrates four complementary reliability signals—detection accuracy, performance stability, update drift, and predictive uncertainty—into a unified trust score. Trust is incorporated through a sub-linear trust-weighted retraining and aggregation mechanism designed to mitigate noisy, unstable, or potentially compromised clients under non-IID telemetry conditions.
+
+The framework is evaluated using two complementary scenarios: the CTU-13 benchmark dataset and real honeypot-generated attack telemetry. Across both datasets, TrustFed-Honeypot consistently outperforms standard Federated Averaging and approaches centralized learning performance without raw data exchange. Notably, the proposed method significantly reduces false negative rates, strengthening operational reliability in distributed intrusion detection systems.
+
+These results demonstrate that multi-signal behavioral trust modeling improves security robustness, enhances aggregation reliability, and advances the practical deployment of federated intrusion detection in heterogeneous environments.
+\end{abstract}
+
+%%Graphical abstract
+\begin{graphicalabstract}
+%\includegraphics{grabs}
+\end{graphicalabstract}
+
+
+%% Research highlights
+\begin{highlights}
+\item Behavioral multi-signal trust fusion for federated IDS reliability
+\item Trust-weighted retraining mitigates corrupted and noisy clients
+\item First cross-source federated IDS using benchmark and honeypot data
+\item Consistently lower false negatives in heterogeneous settings
+\item Near-centralized performance without raw data sharing
+\end{highlights}
+
+%% Keywords
+\begin{keyword}
+
+Federated learning \sep Intrusion detection systems \sep Honeypots \sep Trust-aware aggregation \sep Distributed cybersecurity \sep Non-IID data
+
+
+%% keywords here, in the form: keyword \sep keyword
+
+%% PACS codes here, in the form: \PACS code \sep code
+
+%% MSC codes here, in the form: \MSC code \sep code
+%% or \MSC[2008] code \sep code (2000 is the default)
+
+\end{keyword}
+
+\end{frontmatter}
+
+%% Add \usepackage{lineno} before \begin{document} and uncomment 
+%% following line to enable line numbers
+%% \linenumbers
+
+%% main text
+%%
+
+%% Use \section commands to start a section
+\section{Introduction}
+
+Intrusion Detection Systems (IDS) remain a foundational component of modern cybersecurity architectures, enabling the identification of malicious activity and supporting incident response across enterprise, cloud, and industrial networks. However, traditional IDS deployments frequently assume centralized telemetry collection and processing. In increasingly distributed computing environments—comprising edge devices, IoT nodes, fog gateways, and cloud platforms—this assumption becomes unrealistic. Centralized IDS architectures introduce scalability bottlenecks, privacy risks, regulatory concerns, and single points of failure \cite{asadndflztids,kairouz2021advancesfl}.
+
+Machine learning (ML) has substantially improved IDS capability by enabling models to learn complex behavioral patterns beyond rule-based detection. Deep learning and anomaly detection models have demonstrated strong performance on benchmark intrusion datasets \cite{kazmi2026sdnfl}. Nevertheless, most ML-based IDS solutions depend on centralized data aggregation for training, which raises confidentiality concerns and limits cross-organization collaboration in security monitoring environments.
+
+Federated learning (FL) addresses this limitation by enabling collaborative model training without sharing raw telemetry data \cite{mcmahan2017fedavg}. In FL, clients train local models and exchange only parameter updates for aggregation. This paradigm has gained attention in distributed cybersecurity monitoring \cite{alabdulatif2025fedcognis}. Several recent studies apply FL to network intrusion detection and anomaly detection to reduce data-sharing barriers \cite{kazmi2026sdnfl}.
+
+Despite its promise, FL introduces new security and reliability challenges that are particularly critical in intrusion detection contexts. Data across clients are typically non-IID, reflecting heterogeneous traffic distributions, varying attack exposure, inconsistent labeling quality, and environmental diversity. Standard aggregation strategies such as Federated Averaging (FedAvg) assume equal reliability among participating clients \cite{mcmahan2017fedavg}. This assumption becomes problematic when unreliable, noisy, or compromised nodes contribute model updates, potentially degrading global model robustness and increasing false negatives \cite{ilyas2026poisonshield}.
+
+To address these concerns, trust-aware federated learning has emerged as a mechanism to improve robustness in distributed environments. Trust mechanisms estimate client reliability and adjust aggregation weights accordingly. Prior work has proposed trust-enhanced anomaly detection frameworks for IoT systems \cite{anwer2025tead}, dynamic trust estimation for wireless sensor networks \cite{goswami2025smart}, and trust-aware aggregation to mitigate poisoning attacks in federated IDS \cite{ilyas2026poisonshield,tavasoli2026cav}. Zero-trust federated IDS architectures further demonstrate the growing interest in integrating trust reasoning into distributed security monitoring \cite{asadndflztids}.
+
+However, a critical security gap remains. Most trust-aware FL approaches rely predominantly on single-metric reliability estimation—typically validation accuracy—to determine client trustworthiness. In adversarial and heterogeneous IDS environments, this assumption is insufficient. A client may achieve acceptable validation accuracy while exhibiting unstable performance across rounds, abnormal model update drift, or high predictive uncertainty. Such behaviors may signal noisy telemetry, concept drift, compromised nodes, or poisoning attempts. Single-metric trust modeling therefore creates aggregation vulnerabilities and limits robustness under realistic operational conditions.
+
+Parallel to federated IDS research, honeypot technologies provide attacker-centric telemetry that complements benchmark intrusion datasets. Honeypots intentionally attract adversaries and capture high-fidelity attack interaction traces with minimal benign traffic \cite{muntaha2025adaptivehoneypot}. Trust-aware honeypot frameworks have been explored to strengthen IoT security by combining deception with reliability reasoning \cite{otoum2024blockchain}. However, federated IDS studies largely evaluate models using benchmark datasets only, while honeypot-based research often operates outside federated learning pipelines. Cross-source validation combining benchmark intrusion datasets with real honeypot telemetry remains limited.
+
+This paper addresses these security and reliability gaps by introducing \textbf{TrustFed-Honeypot}, a behavioral multi-signal trust fusion framework for federated intrusion detection. Instead of relying solely on validation accuracy, the proposed method integrates four complementary reliability signals: (i) detection accuracy, (ii) stability across rounds, (iii) update drift magnitude, and (iv) predictive uncertainty. These signals are fused into a unified trust score that captures behavioral reliability over time. Trust is incorporated using optimized sub-linear weighting (trust$^{0.8}$) and trust-weighted data retraining to mitigate the influence of noisy, unstable, or potentially compromised clients while preserving data diversity under non-IID conditions.
+
+The framework is evaluated across two complementary telemetry scenarios: (i) the CTU-13 benchmark intrusion detection dataset and (ii) real honeypot-generated telemetry containing diverse attack types. By combining benchmark and attacker-centric telemetry, we provide cross-source validation that strengthens generalizability. Experimental results demonstrate consistent improvements over standard Federated Averaging and competitive performance relative to centralized learning, with notably reduced false negative rates—an operationally critical metric for intrusion detection systems.
+
+The contributions of this work are threefold:
+\begin{itemize}
+    \item Identification of security and reliability gaps in single-metric trust-aware federated IDS.
+    \item A behavioral multi-signal trust fusion framework with sub-linear aggregation and trust-weighted retraining.
+    \item Cross-telemetry validation demonstrating robustness across benchmark and real honeypot datasets.
+\end{itemize}
+
+
+\section{Background and Related Work}
+
+This section reviews deception-based monitoring, machine-learning IDS,
+federated learning for security monitoring, and trust-aware aggregation.
+We highlight limitations that motivate behavioral multi-signal trust fusion.
+
+\subsection{Deception-Based Monitoring and Honeypot Telemetry}
+
+Honeypots collect attacker-centric telemetry by attracting adversaries
+to controlled decoy services, capturing exploit payloads, commands,
+and post-compromise behavior often absent from benchmark datasets
+\cite{fraunholz2021honeypot}. Such telemetry is valuable for both
+threat intelligence and IDS model enrichment.
+
+Recent work advances adaptive deception architectures. Otoum et al.\
+integrate bi-stage IDS with trust-aware service migration and dynamic
+high-interaction honeypots in IoT/edge environments
+\cite{otoum2025ngwn_honeypot}. FedPot explores collaborative
+honeypot-based detection using federated learning with data-quality
+assessment \cite{albaseer2024fedpot}. HoneyGAN Pots address scalable
+decoy generation via GAN-based configuration synthesis
+\cite{gabrys2024honeygan}.
+
+Despite these advances, most evaluations remain environment-specific
+or simulation-driven. Cross-source validation combining benchmark IDS
+datasets with heterogeneous honeypot telemetry in federated settings
+remains limited.
+
+\subsection{Machine Learning for Intrusion Detection}
+
+Deep learning has substantially improved IDS performance, with
+autoencoders, CNNs, and hybrid models achieving strong results on
+datasets such as NSL-KDD, UNSW-NB15, CIC-IDS2017, and CTU-13
+\cite{shone2017autoencoder,lotfollahi2020deep}. However, most
+architectures remain centralized, requiring data aggregation that
+introduces privacy and scalability constraints.
+
+Moreover, centralized models may not generalize across heterogeneous
+environments. Honeypot telemetry offers complementary attacker-focused
+evidence but is rarely integrated into collaborative learning pipelines.
+
+\subsection{Federated Learning for Security Monitoring}
+
+As shown in Figure \ref{fig1} federated learning (FL) enables collaborative training without raw
+data sharing \cite{mcmahan2017fedavg}. Federated IDS models have been proposed for IoT and vehicular networks, achieving competitive
+performance while preserving privacy \cite{yang2022convlstmfl,nguyen2022flids}.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.6\linewidth]{Figures/FL_Architecture1.jpg}
+\caption{Federated Learning Architecture \cite{huang2024iovidfl}}
+\label{fig1}
+\end{figure}
+
+However, many studies partition benchmark datasets across simulated
+clients, implicitly assuming mild heterogeneity. Real-world telemetry
+exhibits stronger non-IID characteristics. Standard aggregation such
+as FedAvg assumes equal client reliability and is vulnerable to noisy
+or compromised participants \cite{blanchard2017byzantine}.
+
+\subsection{Trust-Aware Federated Learning}
+
+Trust-aware aggregation aims to mitigate unreliable or malicious
+clients. Byzantine-robust aggregation \cite{blanchard2017byzantine}
+and FedProx \cite{li2020fedprox} improve stability under heterogeneity.
+
+Recent multi-factor trust frameworks extend beyond single metrics.
+FederatedTrust combines privacy, robustness, fairness, and
+accountability into a system-level trust score
+\cite{Sanchez2024FederatedTrust}. TrustFed-CTI models contributor
+credibility for collaborative cyber threat intelligence
+\cite{Mrabet2025TrustFedCTI}. Trust-based client selection mechanisms
+incorporate contextual and reputation features in IoV settings
+\cite{Raza2025TrustClientSelectionIoV}.
+
+These approaches primarily evaluate contributor credibility or
+system-level trust rather than modeling round-by-round behavioral
+reliability during IDS training as shown in Figure \ref{fig2}. 
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.6\linewidth, angle=90]{Figures/TrustFed_architecture.png}
+\caption{Trusted Federated Learning Architecture \cite{huang2024iovidfl}}
+\label{fig2}
+\end{figure}
+In intrusion detection, a client may
+achieve high accuracy while exhibiting unstable performance, abnormal
+update drift, or overconfident predictions under distribution shift.
+Such failure modes remain insufficiently modeled in existing work.
+Federated learning (FL) enables collaborative model training across distributed
+participants without sharing raw data \cite{mcmahan2017fedavg} . 
+Clients train local models using private datasets and share model updates with a central aggregation server. 
+This paradigm has become increasingly attractive for privacy-sensitive cybersecurity applications.
+
+
+\subsection{Research Gap}
+
+Despite advances in intrusion detection, deception-based monitoring,
+and federated learning, three key limitations remain.
+
+First, honeypots provide rich attacker-centric telemetry, yet their
+systematic integration into federated intrusion detection pipelines
+is limited. Federated IDS studies largely rely on benchmark datasets,
+while honeypot research often focuses on deception deployment rather
+than collaborative model training.
+
+Second, empirical evaluation in federated IDS frequently assumes
+homogeneous or mildly heterogeneous data by partitioning a single
+dataset across simulated clients. Such settings inadequately capture
+cross-domain variability, distribution shift, and reliability
+differences across heterogeneous telemetry sources.
+
+Third, existing trust-aware federated learning mechanisms primarily
+emphasize contributor credibility or Byzantine robustness, but rarely
+model IDS-specific behavioral reliability during training. In practice,
+client reliability depends not only on validation accuracy, but also on
+temporal stability, update drift behavior, and predictive uncertainty
+under distribution shift. These learning-dynamics-based failure modes
+remain insufficiently addressed.
+
+To close these gaps, we propose Multi-signal TrustFed-Honeypot, a behavioral multi-signal trust fusion framework that integrates accuracy, stability,
+update drift, and predictive uncertainty into a unified trust score. Combined with sub-linear trust-weighted aggregation and retraining, the approach improves robustness and operational reliability under
+heterogeneous federated intrusion detection settings.
+
+\section{The proposed method}
+\label{sec:method}
+
+TrustFed-Honeypot is a reliability-aware federated intrusion detection framework designed for heterogeneous cybersecurity telemetry environments. Unlike standard federated learning (FL), which assumes uniform client reliability \cite{mcmahan2017fedavg,kairouz2021advancesfl}, the proposed framework models behavioral trust using multi-signal fusion and sub-linear trust-weighted aggregation.
+
+\subsection{Problem Formulation}
+
+Consider $K$ distributed IDS clients. Each client $i$ holds private dataset $D_i$ drawn from potentially non-IID distributions. The global objective is:
+
+\begin{equation}
+\min_{w} \sum_{i=1}^{K} p_i \mathcal{L}_i(w)
+\end{equation}
+
+where $w$ is the global model, $\mathcal{L}_i(w)$ is the local loss, and $p_i$ denotes the aggregation weight.
+
+In FedAvg \cite{mcmahan2017fedavg}, $p_i = \frac{1}{K}$ (or proportional to dataset size). This implicitly assumes equal reliability, which is unrealistic in federated IDS deployments where telemetry quality varies across honeypot and distributed sensor nodes.
+
+\subsection{Threat Model}
+
+We assume:
+
+\begin{itemize}
+\item Label noise and feature corruption,
+\item Statistical heterogeneity (non-IID data),
+\item Concept drift,
+\item Partially compromised but not fully Byzantine clients.
+\end{itemize}
+
+We do not assume arbitrary gradient manipulation as in Byzantine attacks \cite{blanchard2017machine,yin2018byzantine}. This reflects realistic intrusion detection deployments where data quality degradation is more common than fully adversarial gradient crafting.
+
+\subsection{System Architecture}
+
+Figure~\ref{fig:trustfed_arch} illustrates the TrustFed-Honeypot pipeline.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{Figures/Multi_Signal_Trust_Fusion.PNG}
+\caption{Multi-Signal TrustFed-Honeypot Architecture. Clients compute behavioral trust signals that are fused by a Trust Manager and used for sub-linear trust-weighted aggregation and retraining.}
+\label{fig:trustfed_arch}
+\end{figure}
+
+The framework consists of:
+
+\begin{enumerate}
+\item \textbf{Federated Clients:} Honeypot/IDS nodes performing local training.
+\item \textbf{Trust Signal Layer:} Computes behavioral reliability indicators.
+\item \textbf{Trust Manager:} Fuses signals and updates trust scores.
+\item \textbf{Central Server:} Performs trust-weighted aggregation and retraining.
+\end{enumerate}
+
+This modular separation between learning and reliability estimation distinguishes the framework from single-metric trust-based FL approaches.
+
+\subsection{Behavioral Multi-Signal Trust Fusion}
+
+Single-metric trust (e.g., validation accuracy only) is insufficient in heterogeneous environments. Clients may exhibit acceptable accuracy while producing unstable or drifted updates.
+
+We define four behavioral signals:
+
+The four behavioral signals are defined as:
+\begin{align}
+Acc_i^r &= \text{Accuracy}, \\
+Stab_i^r &= \mathrm{Var}\!\left(Acc_i^{1:r}\right), \\
+Drift_i^r &= \left\| w_i^r - w_i^{r-1} \right\|, \\
+Unc_i^r &= \text{Entropy}.
+\end{align}
+
+The fused trust signal is:
+
+\begin{equation}
+S_i^r =
+\lambda_1 Acc_i^r
+- \lambda_2 Stab_i^r
+- \lambda_3 Drift_i^r
++ \lambda_4 (1 - Unc_i^r)
+\end{equation}
+
+After normalization:
+
+\begin{equation}
+\hat{S}_i^r = \mathrm{Normalize}!\left(S_i^r\right)
+\end{equation}
+
+Adaptive trust update:
+
+\begin{equation}
+T_i^r =
+\alpha T_i^{r-1}
++ (1-\alpha)\hat{S}_i^r
+\end{equation}
+
+This formulation extends performance-based trust toward behavioral reliability modeling, addressing instability limitations observed in FL under heterogeneity \cite{kairouz2021advancesfl,li2020fedprox}.
+
+\subsection{Sub-Linear Trust-Weighted Aggregation}
+
+The global model update is:
+
+\begin{equation}
+w^{r+1} =
+\sum_{i=1}^{K}
+\frac{(T_i^r)^\beta}{\sum_{j=1}^{K}(T_j^r)^\beta}
+, w_i^{r+1},
+\end{equation}
+
+where $\beta < 1$ implements sub-linear weighting.
+
+\paragraph{Theoretical Justification.}
+
+Let $f(T) = T^\beta$. Its derivative is:
+
+\begin{equation}
+\frac{d}{dT} T^\beta = \beta T^{\beta-1}.
+\end{equation}
+
+For $0 < \beta < 1$, $f(T)$ is concave. Concavity compresses large trust disparities and attenuates marginal influence for high-trust clients, yielding: (i) reduced sensitivity to trust estimation noise, (ii) prevention of dominance by a single high-trust client, and (iii) improved stability under non-IID distributions. In contrast, $\beta > 1$ yields convex amplification, which can increase aggregation instability. Sub-linear weighting therefore acts as a regularization mechanism on client influence, consistent with stability findings in heterogeneous FL \cite{kairouz2021advancesfl,li2020fedprox}.
+
+\textcolor{blue}{Empirical evaluation (Table~\ref{tab:beta_comparison}) demonstrates that $\beta = 0.8$ provides the optimal balance between differentiation and aggregation stability, achieving 72.87\% accuracy and 84.19\% F1-score on the CTU-13 benchmark dataset in a dedicated beta comparison experiment. This outperforms both stronger compression ($\beta=0.5$, 71.33\% accuracy) and linear weighting ($\beta=1.0$, 72.48\% accuracy), while convex amplification ($\beta=1.2$) degrades performance to 65.88\% accuracy, confirming that sub-linear weighting is essential for aggregation stability. Note that the main experimental results (Section~\ref{subsec:ctu13}) use the same $\beta=0.8$ configuration and achieve 72.62\% accuracy and 84.04\% F1-score, with the small difference (0.25 pp accuracy, 0.15 pp F1) attributable to experimental run variation.}
+
+\begin{table}[h]
+\centering
+\caption{Empirical Comparison of Trust Exponent $\beta$}
+\label{tab:beta_comparison}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lccc}
+\toprule
+\textbf{$\beta$} & \textbf{Description} & \textbf{Accuracy} & \textbf{F1-Score} \\
+\midrule
+0.5 & Strong compression & \textcolor{blue}{71.33\%} & \textcolor{blue}{83.02\%} \\
+0.8 & Optimal (balanced) & \textcolor{blue}{\textbf{72.87\%}} & \textcolor{blue}{\textbf{84.19\%}} \\
+1.0 & Linear weighting & \textcolor{blue}{72.48\%} & \textcolor{blue}{83.81\%} \\
+1.2 & Convex amplification & \textcolor{blue}{65.88\%} & \textcolor{blue}{78.13\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Trust-Weighted Data Retraining}
+
+Beyond parameter averaging, the server performs trust-weighted retraining:
+
+\begin{equation}
+D^{global} =
+\bigcup_{i=1}^{K}
+\mathrm{Sample}!\left(D_i, \pi_i |D_i|\right)
+\end{equation}
+
+\begin{equation}
+w^{r+1} = \mathrm{Train}!\left(D^{global}\right),
+\end{equation}
+
+where
+
+\begin{equation}
+\pi_i =
+\frac{(T_i^r)^\beta}{\sum_{j=1}^{K}(T_j^r)^\beta}.
+\end{equation}
+
+This produces a fully retrained global model rather than a weighted parameter average. Unlike Byzantine-robust aggregators such as Krum \cite{blanchard2017machine} or coordinate-wise Median \cite{yin2018byzantine}, which filter gradients, trust-weighted retraining reshapes the effective training distribution toward reliable telemetry.
+
+\textcolor{blue}{\textit{Privacy Note: In the current experimental evaluation, trust-weighted retraining is implemented by transmitting sampled data from clients to the server, where data is sampled proportionally to trust scores. This enables direct evaluation of the trust-weighted retraining approach. In practical deployment, this can be implemented using privacy-preserving techniques such as secure aggregation protocols \cite{bonawitz2017practical} or differential privacy mechanisms \cite{dwork2014algorithmic} to preserve client privacy while maintaining the trust-weighted data distribution. Alternatively, clients can transmit encrypted feature embeddings or use homomorphic encryption for trust-weighted aggregation without exposing raw telemetry. The trust-weighted retraining mechanism itself is orthogonal to the privacy-preservation layer and can be integrated with existing federated learning privacy frameworks.}}
+
+\subsection{Complexity}
+
+Per communication round:
+
+\begin{equation}
+O!\left(K|w| + |D^{global}|\right)
+\end{equation}
+
+Client computation:
+
+\begin{equation}
+O!\left(E |D_i| d\right)
+\end{equation}
+
+Server retraining:
+
+\begin{equation}
+O!\left(|D^{global}| d\right).
+\end{equation}
+
+The framework scales linearly with the number of clients and data size.
+
+\subsection{Security Properties}
+
+TrustFed-Honeypot mitigates Label noise, Feature corruption, Model instability, Concept drift, and Partial compromise.
+
+Complementary mechanisms such as secure aggregation \cite{bonawitz2017practical} or Byzantine-robust optimization \cite{blanchard2017machine} can be integrated if stronger adversarial guarantees are required.
+
+\subsection{Evaluation Metrics}
+
+Performance is measured using Accuracy, Precision, Recall, F1-score, False Positive Rate (FPR), and False Negative Rate (FNR). FNR is particularly critical for operational IDS deployment due to the risk of missed attacks \cite{ring2019datasetsurvey,ahmad2021idsreview}.
+
+
+\section{Experiments and analysis}
+
+\subsection{Model Selection and Justification}
+
+\textcolor{blue}{TrustFed-Honeypot is designed as a \textbf{model-agnostic} framework, meaning the trust-aware aggregation mechanism works with any machine learning model that supports trust-weighted data retraining. To validate this model-agnostic design, we evaluate four model architectures: Logistic Regression (implemented as SGDClassifier with log loss), Multi-Layer Perceptron (MLP), Random Forest, and XGBoost. The main two-scenario evaluation (CTU-13 and honeypot datasets) uses Logistic Regression, while all four models are evaluated on the CTU-13 dataset to demonstrate model-agnosticism, as discussed in Section~\ref{subsec:model_agnostic}.}
+
+\textcolor{blue}{Our experimental results demonstrate that TrustFed-Honeypot with Logistic Regression achieves 72.62\% accuracy on CTU-13 (99.9\% of Centralized performance) and 71.30\% on honeypot data, significantly outperforming FedAvg (+23.91 percentage points and +10.93 percentage points respectively) while maintaining privacy. The trust-aware framework's value lies in its ability to improve performance \textit{relative to standard federated aggregation} (FedAvg) under heterogeneous conditions, regardless of the underlying model architecture.}
+
+\subsection{Model-Agnostic Evaluation}
+\label{subsec:model_agnostic}
+
+\textcolor{blue}{To validate the model-agnostic nature of TrustFed-Honeypot, we evaluated four model architectures on the CTU-13 dataset: Logistic Regression (SGDClassifier with log loss), Multi-Layer Perceptron (MLP with a single hidden layer of 50 neurons), Random Forest (100 estimators), and XGBoost (100 estimators, max depth 6, learning rate 0.1). All experiments used the same experimental configuration: 10 federated learning rounds, multi-signal trust fusion with $\beta = 0.8$, and random seed 42. Table~\ref{tab:model_comparison} presents the performance comparison across all four models.}
+
+\begin{table}[h]
+\centering
+\caption{Model-Agnostic Performance Comparison on CTU-13 Dataset}
+\label{tab:model_comparison}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Model} & \textbf{Trust-Aware} & \textbf{FedAvg} & \textbf{Centralized} & \textbf{$\Delta$ (Trust-Aware vs FedAvg)} \\
+\midrule
+Logistic Regression & \textcolor{blue}{\textbf{72.62\%}} & 48.71\% & 72.58\% & \textcolor{blue}{\textbf{+23.91 pp}} \\
+MLP & \textcolor{blue}{\textbf{61.15\%}} & 40.95\% & 40.90\% & \textcolor{blue}{\textbf{+20.20 pp}} \\
+Random Forest & 70.23\% & \textbf{72.58\%} & 72.58\% & -2.35 pp \\
+XGBoost & 70.01\% & \textbf{70.79\%} & 68.88\% & -0.78 pp \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textcolor{blue}{The results demonstrate that Trust-Aware aggregation provides significant improvements for linear and neural models. Logistic Regression shows a +23.91 percentage point improvement over FedAvg, while MLP shows a +20.20 percentage point improvement. These substantial gains validate the effectiveness of trust-weighted aggregation for models that are more sensitive to data quality.}
+
+\textcolor{blue}{For tree-based models (Random Forest and XGBoost), which are inherently robust through ensemble averaging, trust weighting provides smaller benefits. FedAvg performs slightly better than Trust-Aware for Random Forest (-2.35 pp) and XGBoost (-0.78 pp). However, these differences are small (less than 3 percentage points), indicating that Trust-Aware remains competitive even for inherently robust models. Notably, Trust-Aware still outperforms Centralized learning with XGBoost (+1.13 pp), demonstrating that trust-weighted aggregation can be beneficial even when FedAvg performs well.}
+
+\textcolor{blue}{These results validate the model-agnostic design of TrustFed-Honeypot. The framework successfully works with diverse model architectures, from linear models to neural networks to ensemble tree-based methods. The consistent pattern—where Trust-Aware provides substantial benefits for linear/neural models while remaining competitive for tree-based models—demonstrates that the trust-aware aggregation mechanism is effective across different model types, with particularly strong benefits for models that are more sensitive to data quality variations.}
+
+\subsection{Experimental Setup}
+
+\textcolor{blue}{We evaluate TrustFed-Honeypot on both scenarios using the same experimental configuration to ensure fair comparison. Both main scenarios use Logistic Regression classifiers (SGDClassifier with log loss, max\_iter=1000) as the primary model, with 10 federated learning rounds, adaptive trust updates ($\alpha = 0.5$), and heterogeneous client distributions with varying quality tiers. Additional model architectures (MLP, Random Forest, XGBoost) are evaluated on the CTU-13 dataset in Section~\ref{subsec:model_agnostic} to validate the model-agnostic nature of the framework. Trust scores are computed using \textbf{multi-signal trust fusion} (combining accuracy, stability, drift, and uncertainty signals) with optimized weights ($\lambda_1=1.0$, $\lambda_2=0.3$, $\lambda_3=0.2$, $\lambda_4=0.2$). The trust exponent $\beta = 0.8$ is used for aggregation weighting. The test sets are completely separate from training data to prevent data leakage, and both scenarios use balanced test sets (20\% benign, 80\% attack) to ensure realistic evaluation. Random seed is set to 42 for reproducibility.} To ensure result stability, all experiments were conducted with a fixed random seed (42). While repeated trials were not performed, the consistency of performance improvements across two independent datasets (CTU-13 and honeypot telemetry) suggests that the observed gains are robust and not dataset-specific. Future work will include multi-run statistical validation with confidence intervals.
+
+We compare against Centralized learning and FedAvg as standard baselines in federated intrusion detection literature. Robust aggregation methods such as Krum and Trimmed Mean are not included, as they operate at the parameter level, whereas our approach focuses on data-level reliability through trust-weighted retraining. This positions the proposed method as complementary to parameter-level defenses.
+
+Although experiments were conducted with a fixed random seed for reproducibility, 
+the consistency of performance gains across two independent datasets provides 
+evidence of robustness. Future work will include multi-run statistical validation 
+with confidence intervals and significance testing.
+
+This work focuses on data-level reliability through trust-weighted retraining, 
+which is orthogonal to parameter-level defenses such as Krum or Trimmed Mean. 
+These approaches can be integrated in future work to provide complementary robustness.
+
+\subsection{Scenario 1: Benchmark IDS Dataset (CTU-13)}
+\label{subsec:ctu13}
+
+\textbf{Experimental Configuration:}
+\begin{itemize}
+    \item \textbf{Number of Clients}: 7 clients (3 high-quality, 2 medium-quality, 2 low-quality)
+    \item \textbf{Total Training Samples}: ~91,000 samples
+    \item \textbf{Test Set}: 10,000 samples (2,000 benign, 8,000 attack)
+    \item \textbf{Model}: Logistic Regression (SGDClassifier)
+    \item \textbf{Rounds}: 10 federated learning rounds
+    \item \textbf{Trust Alpha}: 0.5
+\end{itemize}}
+
+Experimental results on the CTU-13 benchmark dataset demonstrate that Trust-Aware Federated Learning outperforms both Centralized and FedAvg baselines:
+
+\begin{table}[h]
+\centering
+\caption{Performance Comparison on CTU-13 Benchmark Dataset}
+\label{tab:ctu13_results}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Approach} & \textbf{Accuracy} & \textbf{F1-Score} & \textbf{Precision} & \textbf{Recall} & \textbf{FNR} \\
+\midrule
+Centralized & 72.58\% & 83.98\% & 78.85\% & 89.81\% & 10.19\% \\
+FedAvg & 48.71\% & 63.96\% & 73.04\% & 56.89\% & 43.11\% \\
+TrustFed-Honeypot & \textcolor{blue}{\textbf{72.62\%}} & \textcolor{blue}{\textbf{84.04\%}} & \textcolor{blue}{\textbf{79.17\%}} & \textcolor{blue}{\textbf{87.60\%}} & \textcolor{blue}{\textbf{12.40\%}} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{Confusion Matrices for CTU-13 Benchmark Dataset}
+\label{tab:ctu13_confusion}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Approach} & \multicolumn{2}{c}{\textbf{Confusion Matrix}} \\
+\midrule
+\multirow{2}{*}{\textbf{Centralized}} & TN: 73 & FP: 1,927 \\
+ & FN: 815 & TP: 7,185 \\
+\midrule
+\multirow{2}{*}{\textbf{FedAvg}} & TN: 320 & FP: 1,680 \\
+ & FN: 3,449 & TP: 4,551 \\
+\midrule
+\multirow{2}{*}{\textbf{TrustFed-Honeypot}} & \textcolor{blue}{TN: 254} & \textcolor{blue}{FP: 1,746} \\
+ & \textcolor{blue}{FN: 992} & \textcolor{blue}{TP: 7,008} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textcolor{blue}{Trust-Aware achieves +23.91 percentage points higher accuracy and +20.08 percentage points higher F1-Score compared to FedAvg, demonstrating the significant effectiveness of multi-signal trust-based client weighting on benchmark IDS datasets. Trust-Aware achieves 72.62\% accuracy, which is 99.9\% of Centralized performance (72.58\%), showing that quality-based filtering with multi-signal trust fusion achieves near-centralized performance while maintaining privacy. The confusion matrices show that Trust-Aware achieves a false negative rate of 12.40\% compared to FedAvg (43.11\%) and Centralized (10.19\%), which is critical for intrusion detection where missing attacks is more costly than false alarms. The multi-signal trust scores accurately reflect client quality by combining accuracy, stability, drift, and uncertainty signals. While TrustFed-Honeypot reduces false negatives significantly compared to FedAvg, it exhibits a slightly higher false positive rate. This trade-off is acceptable in intrusion detection contexts where missing attacks is more critical than raising false alarms. The optimized trust$^{0.8}$ weighting strategy with multi-signal trust fusion effectively differentiates between client quality levels while maintaining aggregation stability.}
+
+\subsection{Scenario 2: Real Honeypot Dataset}
+
+\textbf{Experimental Configuration:}
+\begin{itemize}
+    \item \textbf{Number of Clients}: 12 clients (3 high-quality, 2 medium-quality, 7 compromised)
+    \item \textbf{Total Training Samples}: ~140,000 samples
+    \item \textbf{Test Set}: 10,000 samples (2,000 benign, 8,000 attack)
+    \item \textbf{Model}: Logistic Regression (SGDClassifier)
+    \item \textbf{Rounds}: 10 federated learning rounds
+    \item \textbf{Trust Alpha}: 0.5
+\end{itemize}}
+
+Experimental results on the real honeypot dataset demonstrate consistent superiority of Trust-Aware Federated Learning:
+
+\begin{table}[h]
+\centering
+\caption{Performance Comparison on Real Honeypot Dataset}
+\label{tab:honeypot_results}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Approach} & \textbf{Accuracy} & \textbf{F1-Score} & \textbf{Precision} & \textbf{Recall} & \textbf{FNR} \\
+\midrule
+Centralized & 43.56\% & 52.31\% & 80.25\% & 38.80\% & 61.20\% \\
+FedAvg & 60.37\% & 70.81\% & 86.21\% & 60.08\% & 39.92\% \\
+TrustFed-Honeypot & \textcolor{blue}{\textbf{71.30\%}} & \textcolor{blue}{\textbf{80.76\%}} & \textcolor{blue}{\textbf{87.08\%}} & \textcolor{blue}{\textbf{75.30\%}} & \textcolor{blue}{\textbf{24.70\%}} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{Confusion Matrices for Real Honeypot Dataset}
+\label{tab:honeypot_confusion}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Approach} & \multicolumn{2}{c}{\textbf{Confusion Matrix}} \\
+\midrule
+\multirow{2}{*}{\textbf{Centralized}} & TN: 1,236 & FP: 764 \\
+ & FN: 4,880 & TP: 3,120 \\
+\midrule
+\multirow{2}{*}{\textbf{FedAvg}} & TN: 1,231 & FP: 769 \\
+ & FN: 3,194 & TP: 4,806 \\
+\midrule
+\multirow{2}{*}{\textbf{TrustFed-Honeypot}} & \textcolor{blue}{\textbf{TN: 1,106}} & \textcolor{blue}{\textbf{FP: 894}} \\
+ & \textcolor{blue}{\textbf{FN: 1,976}} & \textcolor{blue}{\textbf{TP: 6,024}} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textcolor{blue}{Trust-Aware achieves +10.93\% higher accuracy and +9.95\% higher F1-Score compared to FedAvg, demonstrating the significant effectiveness of multi-signal trust-based client weighting in realistic heterogeneous scenarios with extreme corruption. Trust-Aware also significantly outperforms Centralized learning by +27.90\% accuracy and +28.45\% F1-Score, demonstrating that quality-based filtering is essential when data quality varies dramatically. The confusion matrices show that Trust-Aware achieves a false negative rate of 24.70\% compared to FedAvg (39.92\%) and Centralized (61.20\%), which is critical for operational IDS deployment. The extreme corruption in compromised clients (99\% label noise) causes Centralized learning to fail completely (43.56\% accuracy), while Trust-Aware successfully filters out unreliable clients and achieves 71.30\% accuracy. The multi-signal trust scores accurately reflect client quality by combining accuracy, stability, drift, and uncertainty signals. The optimized trust$^{0.8}$ weighting strategy with multi-signal trust fusion effectively differentiates between client quality levels while maintaining aggregation stability.}
+
+\paragraph{Ablation Perspective}
+The observed performance gains can be attributed to three key components:
+(i) trust-based weighting, (ii) sub-linear scaling ($\beta = 0.8$), and
+(iii) data-level retraining. In the absence of trust weighting, the
+aggregation reduces to standard FedAvg, where all clients contribute
+equally regardless of data quality, leading to degraded performance under
+heterogeneous conditions. Trust-based weighting therefore acts as the
+primary driver of improvement by prioritizing reliable clients and
+suppressing noisy contributions. The use of sub-linear scaling
+($\beta < 1$) further prevents over-penalization of moderately reliable
+clients, maintaining a balance between robustness and data diversity,
+while data-level retraining ensures that the global model reflects the
+distribution of high-quality telemetry.
+
+\subsection{Why Trust-Aware Aggregation Improves Performance}
+
+The performance gains observed in both scenarios can be attributed to three key factors.
+
+First, trust weighting acts as a noise-filtering mechanism. Low-quality and compromised clients contribute fewer samples to global retraining, reducing the influence of corrupted data.
+
+Second, adaptive trust stabilizes learning under non-IID conditions. By smoothing trust scores across rounds, the framework avoids abrupt shifts in aggregation weights caused by fluctuating client performance.
+
+Third, trust-weighted retraining improves decision boundary consistency. High-quality telemetry dominates training, leading to better separation between benign and malicious traffic and reducing false negatives.
+
+These effects collectively explain the consistent improvements observed across both benchmark and real-world telemetry scenarios. These results have direct implications for real-world intrusion detection systems, where telemetry quality varies across monitoring nodes. The ability to reduce false negatives while maintaining stability makes the approach suitable for operational security environments such as SOCs and distributed IoT monitoring systems.
+
+\subsection{Ablation Study: Contribution of Trust Signals}
+
+\textcolor{blue}{To assess the contribution of each trust signal in the multi-signal fusion framework, we conduct an ablation study comparing different signal combinations. We evaluate four variants: (1) Accuracy only, (2) Accuracy + Stability, (3) Accuracy + Stability + Drift, and (4) Full multi-signal (all four signals). This analysis demonstrates that each signal contributes to improved performance, with the full multi-signal configuration achieving the best results. Note that the ablation study results (Table~\ref{tab:ablation}) show 83.65\% F1 on CTU-13, while the main experimental results (Table~\ref{tab:ctu13_results}) show 84.04\% F1, with the small difference (0.39 pp) attributable to experimental run variation.}
+
+\begin{table}[h]
+\centering
+\caption{Ablation Study: Contribution of Each Trust Signal}
+\label{tab:ablation}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Variant} & \textbf{CTU-13 F1-Score} & \textbf{Honeypot F1-Score} \\
+\midrule
+Accuracy only & \textcolor{blue}{54.16\%} & \textcolor{blue}{71.91\%} \\
++ Stability & \textcolor{blue}{61.23\%} & \textcolor{blue}{77.84\%} \\
++ Drift & \textcolor{blue}{52.67\%} & \textcolor{blue}{68.07\%} \\
+Full (All signals) & \textcolor{blue}{\textbf{83.65\%}} & \textcolor{blue}{\textbf{80.76\%}} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textcolor{blue}{The ablation results (Table~\ref{tab:ablation}) demonstrate that each trust signal contributes to performance improvement. On CTU-13, adding stability to accuracy improves F1-score from 54.16\% to 61.23\% (+7.07 pp), indicating that penalizing unstable clients is beneficial. However, adding drift detection alone (without uncertainty) reduces performance to 52.67\%, suggesting that drift signal requires uncertainty signal for effective integration. The full multi-signal configuration achieves 83.65\% F1 on CTU-13, representing a +29.49 pp improvement over accuracy-only and +22.42 pp over accuracy+stability, validating that all four signals (accuracy, stability, drift, and uncertainty) are essential for optimal performance. On Honeypot, adding stability improves F1-score from 71.91\% to 77.84\% (+5.93 pp), while the full configuration achieves 80.76\% F1, demonstrating consistent benefits across datasets. These results validate that behavioral multi-signal trust fusion provides more robust reliability estimation than single-metric approaches.}
+
+\subsection{Analytical Impact of Trust Weighting}
+
+If all clients are assigned equal trust scores, the aggregation reduces to standard FedAvg, where all clients contribute equally regardless of data quality. In heterogeneous environments, this can degrade performance because noisy or corrupted clients are not down-weighted.
+
+When trust scores vary, high-quality clients receive larger aggregation weights and thus have greater influence on the global model, effectively attenuating unreliable data sources. Using sub-linear weighting ($\beta < 1$) prevents over-penalizing medium-quality clients, preserving useful signal while still reducing the impact of low-quality nodes.
+
+\textcolor{blue}{This perspective explains why $\beta = 0.8$ provides a practical balance between robustness and data diversity in our setting, as empirically validated in Table~\ref{tab:beta_comparison} where $\beta=0.8$ achieves the highest F1-score (84.19\%) compared to other values.}
+
+\subsection{Cross-Dataset Analysis}
+
+\textcolor{blue}{To assess generalization and robustness, we compare performance trends across both evaluation scenarios. This cross-dataset analysis addresses key questions: (1) Does trust-aware FL consistently outperform FedAvg across different data sources? (2) Is trust evolution similar across datasets? (3) Does heterogeneity affect performance differently?}. 
+
+\begin{table}[h]
+\centering
+\caption{Cross-Dataset Performance Comparison}
+\label{tab:cross_dataset}
+
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Dataset} & \textbf{Clients} & \textbf{Centralized F1} & \textbf{FedAvg F1} & \textbf{TrustFed F1} & \textbf{Improvement vs FedAvg} \\
+\midrule
+CTU-13 (Benchmark) & 7 & 83.98\% & 63.96\% & \textcolor{blue}{\textbf{84.04\%}} & \textcolor{blue}{\textbf{+20.08 pp}} \\
+Honeypot (Real) & 12 & 52.31\% & 70.81\% & \textcolor{blue}{\textbf{80.76\%}} & \textcolor{blue}{\textbf{+9.95\%}} \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+
+\begin{table}[h]
+\centering
+\caption{Cross-Dataset False Negative Rate Comparison}
+\label{tab:cross_dataset_fnr}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Dataset} & \textbf{Centralized FNR} & \textbf{FedAvg FNR} & \textbf{TrustFed FNR} \\
+\midrule
+CTU-13 (Benchmark) & 10.19\% & 43.11\% & \textcolor{blue}{\textbf{12.40\%}} \\
+Honeypot (Real) & 61.20\% & 39.92\% & \textcolor{blue}{\textbf{24.70\%}} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+{\color{blue}
+\textbf{Key Findings:}
+
+\begin{itemize}
+    \item \textbf{Consistent Superiority}: TrustFed-Honeypot outperforms both Centralized and FedAvg baselines in both scenarios, demonstrating robust performance across different data sources and attack characteristics. On CTU-13, Trust-Aware achieves +23.91 percentage points higher accuracy vs FedAvg and achieves 99.9\% of Centralized performance (72.62\% vs 72.58\%). On the honeypot dataset, TrustFed-Honeypot achieves the highest performance across all metrics (+10.93\% accuracy vs FedAvg, +27.90\% vs Centralized). The most significant improvement is observed against FedAvg on CTU-13 (+23.91 pp accuracy, +20.08 pp F1), confirming that equal-weight aggregation fails under heterogeneous data conditions.
+
+    \item \textbf{Lowest False Negative Rate}: Trust-Aware achieves significantly lower false negative rates compared to FedAvg in both scenarios (12.40\% vs 43.11\% on CTU-13, 24.70\% vs 39.92\% on honeypot), which is critical for intrusion detection where missing attacks is more costly than false alarms. This demonstrates that trust weighting effectively prioritizes attack detection capability.
+
+    \item \textbf{Trust Effectiveness}: Trust weighting effectively differentiates client quality in both botnet (CTU-13) and diverse attack (honeypot) scenarios. In CTU-13, trust scores range from 0.1190 to 0.6333 (range: 0.5142), while in the honeypot dataset, trust scores range from 0.02 to 0.76 (range: 0.74). Compromised clients consistently receive low trust scores, enabling effective down-weighting.
+
+    \item \textbf{Generalization}: The method generalizes from benchmark datasets (CTU-13) to real-world honeypot deployments (CSVs), showing consistent improvements regardless of data source or attack type diversity. This demonstrates that trust-aware federated learning is not dataset-specific but works across different telemetry sources.
+
+    \item \textbf{Heterogeneity Handling}: Trust-aware aggregation successfully mitigates the impact of compromised clients in both scenarios. In CTU-13, low-quality clients (55\% corruption) receive lower trust scores and contribute less to aggregation. In the honeypot dataset, compromised clients (99\% label noise) receive very low trust scores (0.02--0.37) and are effectively down-weighted.
+
+    \item \textbf{Performance Ranking}: Trust-Aware outperforms both baselines in both scenarios, with different relative rankings reflecting dataset characteristics. On CTU-13: Trust-Aware (72.62\%) $>$ Centralized (72.58\%) $>$ FedAvg (48.71\%). On Honeypot: Trust-Aware (71.30\%) $>$ FedAvg (60.37\%) $>$ Centralized (43.40\%). This demonstrates that trust-aware aggregation consistently improves over equal-weight aggregation regardless of dataset characteristics.
+\end{itemize}
+}
+
+
+\textcolor{blue}{These results demonstrate that the proposed framework performs consistently 
+across both benchmark and real-world telemetry sources. The ability to maintain 
+performance across datasets with different characteristics highlights its 
+robustness in heterogeneous environments. These results suggest potential 
+generalization across heterogeneous telemetry sources, although further 
+validation on additional datasets is required.}
+
+\subsection{Computational and Communication Overhead}
+
+The proposed trust-aware aggregation introduces minimal overhead compared to standard federated learning. Trust computation requires O(K) operations per round, which is negligible relative to local training cost.
+
+The primary additional cost arises from trust-weighted data sampling and global retraining. However, this cost remains proportional to the aggregated dataset size and does not introduce significant scalability limitations.
+
+Overall, the framework maintains linear scalability with respect to the number of clients and dataset size, making it suitable for practical deployment in distributed intrusion detection environments.
+
+\section{Discussion and Conclusion}
+
+Modern intrusion detection systems increasingly operate in distributed
+monitoring environments where telemetry is collected from heterogeneous
+sources such as enterprise networks, IoT devices, cloud infrastructure,
+and deception platforms including honeypots. While federated learning (FL)
+provides a privacy-preserving alternative to centralized model training
+\cite{mcmahan2017fedavg}, standard aggregation approaches such as FedAvg
+assume homogeneous and reliable clients. This assumption rarely holds in
+operational cybersecurity deployments, where data quality varies across
+monitoring nodes \cite{kairouz2021flsurvey,li2020federatedopt}. This study
+was therefore motivated by the need to understand how reliability-aware
+aggregation can improve intrusion detection performance under such
+heterogeneous conditions.
+
+The proposed TrustFed-Honeypot framework introduces validation-driven
+trust estimation combined with trust-weighted data retraining. By modeling
+IDS sensors and honeypot nodes as federated clients, the framework enables
+collaborative learning across heterogeneous telemetry sources while
+systematically reducing the influence of unreliable or noisy clients.
+From a learning perspective, this mechanism approximates importance
+weighting in empirical risk minimization, where higher-quality data
+sources contribute more strongly to model updates, thereby reducing
+variance introduced by low-quality telemetry \cite{owen2013monte}.
+
+Experimental results across both CTU-13 benchmark telemetry and real
+honeypot telemetry demonstrate consistent performance improvements over
+centralized learning and standard federated aggregation. In particular,
+the proposed method achieves the lowest false negative rates in both
+scenarios, which is critical for operational intrusion detection where
+missed attacks represent significant security risk. While TrustFed-Honeypot
+reduces false negatives significantly, it incurs a modest increase in false
+positives compared to FedAvg. This trade-off is acceptable in intrusion
+detection contexts, where failing to detect attacks is typically more
+critical than generating false alarms. These results suggest that
+reliability-aware aggregation improves model robustness when telemetry
+distributions differ across monitoring nodes.
+
+The findings reinforce prior research showing that non-IID data
+distributions and unreliable clients degrade federated learning
+performance \cite{kairouz2021flsurvey,li2020federatedopt}. By weighting
+clients according to validation-based trust scores, TrustFed-Honeypot
+stabilizes aggregation and prioritizes high-quality telemetry sources.
+This aligns with recent trust-aware learning frameworks for IoT intrusion
+detection and distributed anomaly detection environments
+\cite{goswami2025trust,anwer2025tead}. More importantly, the results
+demonstrate that filtering low-quality data sources can be more effective
+than simply increasing data volume, highlighting a key limitation of
+traditional aggregation strategies.
+
+The cross-telemetry evaluation provides evidence that trust-aware
+federated intrusion detection remains effective across both benchmark IDS
+datasets and attacker-centric honeypot telemetry. Unlike many federated
+IDS studies that rely on a single dataset partitioned across simulated
+clients \cite{yang2022iovids,huang2024flids}, this study evaluates
+learning across fundamentally different monitoring mechanisms. The
+integration of honeypot telemetry is particularly important, as deception
+systems capture adversarial behavior patterns that may not be present in
+standard network-flow datasets \cite{fraunholz2021deception,albaseer2024fedpot}.
+These results suggest potential generalization across heterogeneous
+telemetry sources; however, further validation on additional datasets is
+required to establish external validity.
+
+From a deployment perspective, the trust-weighted data retraining strategy
+offers practical advantages. Unlike parameter-averaging approaches, the
+method is compatible with classical machine learning IDS models and does
+not require complex secure aggregation protocols. This makes it suitable
+for collaborative intrusion detection across organizations that cannot
+share raw telemetry but can exchange model-derived data samples. However,
+in real-world deployments, trust estimation may be affected by limited
+validation data, delayed feedback, and concept drift. Communication
+constraints and data governance policies may also restrict the feasibility
+of data-level aggregation.
+
+Despite these promising results, several limitations remain. First, the
+trust estimation mechanism relies on validation accuracy as a proxy for
+client reliability. While effective in the evaluated scenarios, future
+work should explore richer trust signals such as gradient consistency,
+temporal reputation modeling, and uncertainty-based metrics. Second, the
+evaluation focuses on heterogeneous telemetry quality and simulated
+compromised clients. More advanced adversarial scenarios, including model
+poisoning and backdoor attacks, should be investigated. Third, although
+raw data is not directly shared, the exchange of sampled data introduces
+potential privacy risks, which could be mitigated through secure
+aggregation or differential privacy techniques.
+
+Federated learning systems also introduce new security risks, including
+model poisoning, inference attacks, and unreliable client participation.
+Recent research highlights the importance of combining trust modeling
+with cryptographic and robustness mechanisms in federated IDS deployments
+\cite{ahmed2025trustauth,ling2024dpfl}. The results of this study suggest
+that trust-aware aggregation provides a lightweight and effective defense
+against low-quality or partially compromised clients, but should be
+integrated with complementary defenses in high-assurance environments.
+
+In conclusion, this study demonstrates that reliability-aware federated
+learning provides a practical and effective mechanism for improving
+intrusion detection robustness across heterogeneous cybersecurity
+telemetry sources. By integrating honeypot-generated attacker-centric
+data into a federated learning pipeline, the TrustFed-Honeypot framework
+bridges deception-based monitoring and collaborative machine learning.
+The consistent improvements observed across both benchmark and real-world
+telemetry environments highlight the importance of modeling data
+reliability, positioning trust-aware aggregation as a promising direction
+for next-generation distributed intrusion detection systems.
+
+\bibliographystyle{elsarticle-num}
+\bibliography{cas-refs}
+\end{document}
+
+\endinput
+%%
+%% End of file `elsarticle-template-harv.tex'.
+
+

@@ -12,6 +12,12 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import SGDClassifier
+from sklearn.neural_network import MLPClassifier
+try:
+    from xgboost import XGBClassifier
+    XGBOOST_AVAILABLE = True
+except ImportError:
+    XGBOOST_AVAILABLE = False
 
 # Set up logging
 logging.basicConfig(
@@ -33,7 +39,7 @@ class FedAvgAggregator:
         Initialize the aggregator.
         
         Args:
-            model_type: Type of model ('random_forest' or 'logistic_regression')
+            model_type: Type of model ('random_forest', 'logistic_regression', 'mlp', or 'xgboost')
         """
         self.model_type = model_type
         self.global_model = None
@@ -125,6 +131,31 @@ class FedAvgAggregator:
                         random_state=base_model.random_state if hasattr(base_model, 'random_state') else 42,
                         n_jobs=-1
                     )
+                elif self.model_type == 'mlp':
+                    self.global_model = MLPClassifier(
+                        hidden_layer_sizes=base_model.hidden_layer_sizes if hasattr(base_model, 'hidden_layer_sizes') else (100, 50),
+                        activation='relu',
+                        solver='adam',
+                        alpha=0.0001,
+                        max_iter=500,
+                        random_state=42,
+                        early_stopping=True,
+                        validation_fraction=0.1,
+                        n_iter_no_change=10,
+                        tol=1e-4
+                    )
+                elif self.model_type == 'xgboost':
+                    if not XGBOOST_AVAILABLE:
+                        raise ImportError("XGBoost is not installed. Install it with: pip install xgboost")
+                    self.global_model = XGBClassifier(
+                        n_estimators=base_model.n_estimators if hasattr(base_model, 'n_estimators') else 100,
+                        max_depth=base_model.max_depth if hasattr(base_model, 'max_depth') else 6,
+                        learning_rate=base_model.learning_rate if hasattr(base_model, 'learning_rate') else 0.1,
+                        random_state=42,
+                        n_jobs=-1,
+                        eval_metric='logloss',
+                        use_label_encoder=False
+                    )
                 elif self.model_type == 'logistic_regression':
                     self.global_model = SGDClassifier(
                         loss='log_loss',
@@ -160,6 +191,32 @@ class FedAvgAggregator:
                 base_model = client_updates[0]['model']
                 self.global_model = base_model
                 self.aggregated_importances = avg_importances
+
+            elif self.model_type == 'mlp':
+                # For MLP, averaging weights/biases is complex and not recommended
+                # Instead, use the model with highest trust score as base
+                # This is a simplified approach - retraining is preferred
+                base_model = client_updates[0]['model']
+                self.global_model = base_model
+                # Note: True MLP aggregation requires retraining (use_retraining=True)
+                
+            elif self.model_type == 'xgboost':
+                # For XGBoost, aggregate feature importances with trust weights
+                feature_importances_list = [
+                    update['parameters']['feature_importances'] 
+                    for update in client_updates
+                ]
+                
+                # Weighted average
+                weighted_sum = np.zeros_like(feature_importances_list[0])
+                for i, importances in enumerate(feature_importances_list):
+                    weighted_sum += self.client_weights[i] * importances
+                
+                self.aggregated_importances = weighted_sum
+                
+                # Use first model as base structure
+                base_model = client_updates[0]['model']
+                self.global_model = base_model
                 
             elif self.model_type == 'logistic_regression':
                 # Aggregate coefficients and intercepts
@@ -216,7 +273,7 @@ class TrustAwareAggregator:
         Initialize the trust-aware aggregator.
         
         Args:
-            model_type: Type of model ('random_forest' or 'logistic_regression')
+            model_type: Type of model ('random_forest', 'logistic_regression', 'mlp', or 'xgboost')
             trust_manager: Optional TrustManager instance for adaptive trust (if None, uses trust from client updates)
             beta: Trust exponent for sub-linear weighting (default: 0.8, optimal)
         """
@@ -375,6 +432,31 @@ class TrustAwareAggregator:
                         random_state=base_model.random_state if hasattr(base_model, 'random_state') else 42,
                         n_jobs=-1
                     )
+                elif self.model_type == 'mlp':
+                    self.global_model = MLPClassifier(
+                        hidden_layer_sizes=base_model.hidden_layer_sizes if hasattr(base_model, 'hidden_layer_sizes') else (100, 50),
+                        activation='relu',
+                        solver='adam',
+                        alpha=0.0001,
+                        max_iter=500,
+                        random_state=42,
+                        early_stopping=True,
+                        validation_fraction=0.1,
+                        n_iter_no_change=10,
+                        tol=1e-4
+                    )
+                elif self.model_type == 'xgboost':
+                    if not XGBOOST_AVAILABLE:
+                        raise ImportError("XGBoost is not installed. Install it with: pip install xgboost")
+                    self.global_model = XGBClassifier(
+                        n_estimators=base_model.n_estimators if hasattr(base_model, 'n_estimators') else 100,
+                        max_depth=base_model.max_depth if hasattr(base_model, 'max_depth') else 6,
+                        learning_rate=base_model.learning_rate if hasattr(base_model, 'learning_rate') else 0.1,
+                        random_state=42,
+                        n_jobs=-1,
+                        eval_metric='logloss',
+                        use_label_encoder=False
+                    )
                 elif self.model_type == 'logistic_regression':
                     self.global_model = SGDClassifier(
                         loss='log_loss',
@@ -397,6 +479,32 @@ class TrustAwareAggregator:
         if not use_retraining:
             if self.model_type == 'random_forest':
                 # Aggregate feature importances with trust weights
+                feature_importances_list = [
+                    update['parameters']['feature_importances'] 
+                    for update in client_updates
+                ]
+                
+                # Weighted average
+                weighted_sum = np.zeros_like(feature_importances_list[0])
+                for i, importances in enumerate(feature_importances_list):
+                    weighted_sum += self.client_weights[i] * importances
+                
+                self.aggregated_importances = weighted_sum
+                
+                # Use first model as base structure
+                base_model = client_updates[0]['model']
+                self.global_model = base_model
+                
+            elif self.model_type == 'mlp':
+                # For MLP, averaging weights/biases is complex and not recommended
+                # Instead, use the model with highest trust score as base
+                # This is a simplified approach - retraining is preferred
+                base_model = client_updates[0]['model']
+                self.global_model = base_model
+                # Note: True MLP aggregation requires retraining (use_retraining=True)
+                
+            elif self.model_type == 'xgboost':
+                # For XGBoost, aggregate feature importances with trust weights
                 feature_importances_list = [
                     update['parameters']['feature_importances'] 
                     for update in client_updates
