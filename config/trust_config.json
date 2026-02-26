@@ -1,6 +1,6 @@
 {
   "trust_manager": {
-    "alpha": 0.7,
+    "alpha": 0.5,
     "decay_rate": 0.95,
     "anomaly_threshold": 0.2,
     "initial_trust": 0.5,

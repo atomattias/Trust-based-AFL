@@ -95,8 +95,11 @@ class ExperimentRunner:
                     'lambda4': multi_signal_config.get('lambda4', 0.2)   # Uncertainty
                 }
             
+            # Use trust_alpha from argument if provided, otherwise use config
+            final_alpha = trust_alpha if trust_alpha != 0.7 else trust_mgr_config.get('alpha', 0.7)
+            
             self.trust_manager = TrustManager(
-                alpha=trust_alpha if trust_alpha != 0.7 else trust_mgr_config.get('alpha', 0.7),
+                alpha=final_alpha,
                 decay_rate=trust_mgr_config.get('decay_rate', 0.95),
                 anomaly_threshold=trust_mgr_config.get('anomaly_threshold', 0.2),
                 initial_trust=trust_mgr_config.get('initial_trust', 0.5),
@@ -108,8 +111,11 @@ class ExperimentRunner:
             # Store use_multi_signal flag
             self.use_multi_signal = use_multi_signal
             
-            # Apply any additional config
+            # Apply any additional config (but preserve alpha if explicitly set)
             apply_trust_config(self.trust_manager, trust_config)
+            # Override alpha again after apply_trust_config to ensure command-line arg takes precedence
+            if trust_alpha != 0.7:
+                self.trust_manager.alpha = trust_alpha
             
             # Load existing trust histories if available
             self.trust_manager.load_all_trust_histories()

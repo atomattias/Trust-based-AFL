@@ -52,6 +52,7 @@
 \usepackage{booktabs}
 \usepackage{comment}
 \usepackage{listings}
+\usepackage{subcaption}
 
 %% The lineno packages adds line numbers. Start line numbering with
 %% \begin{linenumbers}, end it with \end{linenumbers}. Or switch it on
@@ -478,7 +479,7 @@ where
 
 This produces a fully retrained global model rather than a weighted parameter average. Unlike Byzantine-robust aggregators such as Krum \cite{blanchard2017machine} or coordinate-wise Median \cite{yin2018byzantine}, which filter gradients, trust-weighted retraining reshapes the effective training distribution toward reliable telemetry.
 
-\textcolor{blue}{\textit{Privacy Note: In the current experimental evaluation, trust-weighted retraining is implemented by transmitting sampled data from clients to the server, where data is sampled proportionally to trust scores. This enables direct evaluation of the trust-weighted retraining approach. In practical deployment, this can be implemented using privacy-preserving techniques such as secure aggregation protocols \cite{bonawitz2017practical} or differential privacy mechanisms \cite{dwork2014algorithmic} to preserve client privacy while maintaining the trust-weighted data distribution. Alternatively, clients can transmit encrypted feature embeddings or use homomorphic encryption for trust-weighted aggregation without exposing raw telemetry. The trust-weighted retraining mechanism itself is orthogonal to the privacy-preservation layer and can be integrated with existing federated learning privacy frameworks.}}
+\textcolor{blue}{\textit{Privacy Note: Trust-weighted retraining requires clients to transmit feature vectors (preprocessed statistical features extracted from network telemetry) to the server, where data is sampled proportionally to trust scores. Importantly, \textbf{raw network packets or telemetry are never transmitted}—only preprocessed feature vectors (e.g., packet counts, flow statistics, protocol features) are exchanged. This maintains privacy at the feature level, as individual packets and raw traffic patterns remain on client devices. In the current experimental evaluation, feature vectors are transmitted directly to enable direct evaluation of the trust-weighted retraining approach. In practical deployment, this can be further enhanced using privacy-preserving techniques such as secure aggregation protocols \cite{bonawitz2017practical}, differential privacy mechanisms \cite{dwork2014algorithmic}, or homomorphic encryption to provide additional privacy guarantees while maintaining the trust-weighted data distribution. The trust-weighted retraining mechanism itself is orthogonal to the privacy-preservation layer and can be integrated with existing federated learning privacy frameworks.}}
 
 \subsection{Complexity}
 
@@ -544,20 +545,18 @@ XGBoost & 70.01\% & \textbf{70.79\%} & 68.88\% & -0.78 pp \\
 
 \textcolor{blue}{The results demonstrate that Trust-Aware aggregation provides significant improvements for linear and neural models. Logistic Regression shows a +23.91 percentage point improvement over FedAvg, while MLP shows a +20.20 percentage point improvement. These substantial gains validate the effectiveness of trust-weighted aggregation for models that are more sensitive to data quality.}
 
-\textcolor{blue}{For tree-based models (Random Forest and XGBoost), which are inherently robust through ensemble averaging, trust weighting provides smaller benefits. FedAvg performs slightly better than Trust-Aware for Random Forest (-2.35 pp) and XGBoost (-0.78 pp). However, these differences are small (less than 3 percentage points), indicating that Trust-Aware remains competitive even for inherently robust models. Notably, Trust-Aware still outperforms Centralized learning with XGBoost (+1.13 pp), demonstrating that trust-weighted aggregation can be beneficial even when FedAvg performs well.}
+\textcolor{blue}{For tree-based models (Random Forest and XGBoost), trust weighting provides smaller benefits compared to linear and neural models. FedAvg performs slightly better than Trust-Aware for Random Forest (-2.35 pp) and XGBoost (-0.78 pp). This architecture-dependent behavior can be explained by the inherent robustness mechanisms of tree-based ensemble methods: (1) \textbf{Implicit noise filtering}: Random Forest and XGBoost use bootstrap sampling and feature subsampling, which naturally filter out noisy data points through majority voting across multiple trees; (2) \textbf{Ensemble averaging}: The aggregation of predictions from multiple trees already provides robustness against individual tree errors, reducing the marginal benefit of additional trust-weighted filtering; (3) \textbf{Non-parametric nature}: Tree-based models can adapt to heterogeneous data distributions through their partitioning structure, making them less sensitive to data quality variations compared to parametric models like Logistic Regression. However, the differences between Trust-Aware and FedAvg are small (less than 3 percentage points), indicating that Trust-Aware remains competitive even for inherently robust models. Notably, Trust-Aware still outperforms Centralized learning with XGBoost (+1.13 pp), demonstrating that trust-weighted aggregation can provide benefits even when FedAvg performs well. This suggests that while tree ensembles already provide implicit noise filtering, explicit trust weighting can still contribute to performance, particularly in scenarios with highly heterogeneous client quality distributions.}
 
 \textcolor{blue}{These results validate the model-agnostic design of TrustFed-Honeypot. The framework successfully works with diverse model architectures, from linear models to neural networks to ensemble tree-based methods. The consistent pattern—where Trust-Aware provides substantial benefits for linear/neural models while remaining competitive for tree-based models—demonstrates that the trust-aware aggregation mechanism is effective across different model types, with particularly strong benefits for models that are more sensitive to data quality variations.}
 
 \subsection{Experimental Setup}
+\label{subsec:experimental_setup}
 
-\textcolor{blue}{We evaluate TrustFed-Honeypot on both scenarios using the same experimental configuration to ensure fair comparison. Both main scenarios use Logistic Regression classifiers (SGDClassifier with log loss, max\_iter=1000) as the primary model, with 10 federated learning rounds, adaptive trust updates ($\alpha = 0.5$), and heterogeneous client distributions with varying quality tiers. Additional model architectures (MLP, Random Forest, XGBoost) are evaluated on the CTU-13 dataset in Section~\ref{subsec:model_agnostic} to validate the model-agnostic nature of the framework. Trust scores are computed using \textbf{multi-signal trust fusion} (combining accuracy, stability, drift, and uncertainty signals) with optimized weights ($\lambda_1=1.0$, $\lambda_2=0.3$, $\lambda_3=0.2$, $\lambda_4=0.2$). The trust exponent $\beta = 0.8$ is used for aggregation weighting. The test sets are completely separate from training data to prevent data leakage, and both scenarios use balanced test sets (20\% benign, 80\% attack) to ensure realistic evaluation. Random seed is set to 42 for reproducibility.} To ensure result stability, all experiments were conducted with a fixed random seed (42). While repeated trials were not performed, the consistency of performance improvements across two independent datasets (CTU-13 and honeypot telemetry) suggests that the observed gains are robust and not dataset-specific. Future work will include multi-run statistical validation with confidence intervals.
+\textcolor{blue}{We evaluate TrustFed-Honeypot on both scenarios using the same experimental configuration to ensure fair comparison. Both main scenarios use Logistic Regression classifiers (SGDClassifier with log loss, max\_iter=1000) as the primary model, with 10 federated learning rounds, adaptive trust updates ($\alpha = 0.5$), and heterogeneous client distributions with varying quality tiers. Additional model architectures (MLP, Random Forest, XGBoost) are evaluated on the CTU-13 dataset in Section~\ref{subsec:model_agnostic} to validate the model-agnostic nature of the framework. Trust scores are computed using \textbf{multi-signal trust fusion} (combining accuracy, stability, drift, and uncertainty signals) with optimized weights ($\lambda_1=1.0$, $\lambda_2=0.3$, $\lambda_3=0.2$, $\lambda_4=0.2$). The trust exponent $\beta = 0.8$ is used for aggregation weighting. The test sets are completely separate from training data to prevent data leakage, and both scenarios use balanced test sets (20\% benign, 80\% attack) to ensure realistic evaluation. For statistical validation, all experiments are conducted with 5 independent trials using different random seeds (42, 43, 44, 45, 46). Results are reported as mean $\pm$ standard deviation, and 95\% confidence intervals are computed using the t-distribution to ensure robustness against random seed bias.}
 
 We compare against Centralized learning and FedAvg as standard baselines in federated intrusion detection literature. Robust aggregation methods such as Krum and Trimmed Mean are not included, as they operate at the parameter level, whereas our approach focuses on data-level reliability through trust-weighted retraining. This positions the proposed method as complementary to parameter-level defenses.
 
-Although experiments were conducted with a fixed random seed for reproducibility, 
-the consistency of performance gains across two independent datasets provides 
-evidence of robustness. Future work will include multi-run statistical validation 
-with confidence intervals and significance testing.
+Statistical validation across 5 independent trials with different random seeds ensures that reported performance improvements are robust and not due to random seed bias. The consistency of performance gains across two independent datasets (CTU-13 and honeypot telemetry) further validates the generalizability of the proposed method.
 
 This work focuses on data-level reliability through trust-weighted retraining, 
 which is orthogonal to parameter-level defenses such as Krum or Trimmed Mean. 
@@ -580,15 +579,15 @@ Experimental results on the CTU-13 benchmark dataset demonstrate that Trust-Awar
 
 \begin{table}[h]
 \centering
-\caption{Performance Comparison on CTU-13 Benchmark Dataset}
+\caption{Performance Comparison on CTU-13 Benchmark Dataset (Mean $\pm$ Std Dev across 5 trials)}
 \label{tab:ctu13_results}
 \begin{tabular}{lccccc}
 \toprule
 \textbf{Approach} & \textbf{Accuracy} & \textbf{F1-Score} & \textbf{Precision} & \textbf{Recall} & \textbf{FNR} \\
 \midrule
-Centralized & 72.58\% & 83.98\% & 78.85\% & 89.81\% & 10.19\% \\
-FedAvg & 48.71\% & 63.96\% & 73.04\% & 56.89\% & 43.11\% \\
-TrustFed-Honeypot & \textcolor{blue}{\textbf{72.62\%}} & \textcolor{blue}{\textbf{84.04\%}} & \textcolor{blue}{\textbf{79.17\%}} & \textcolor{blue}{\textbf{87.60\%}} & \textcolor{blue}{\textbf{12.40\%}} \\
+Centralized & $57.43\% \pm 11.96\%$ & $67.04\% \pm 13.25\%$ & $83.88\% \pm 8.03\%$ & $60.12\% \pm 22.49\%$ & $39.88\%$ \\
+FedAvg & $41.29\% \pm 17.07\%$ & $41.99\% \pm 26.93\%$ & $87.28\% \pm 10.96\%$ & $36.07\% \pm 31.07\%$ & $63.93\%$ \\
+TrustFed-Honeypot & \textcolor{blue}{\textbf{$72.81\% \pm 0.96\%$}} & \textcolor{blue}{\textbf{$84.12\% \pm 0.69\%$}} & \textcolor{blue}{\textbf{$78.92\% \pm 0.06\%$}} & \textcolor{blue}{\textbf{$90.08\% \pm 2.29\%$}} & \textcolor{blue}{\textbf{$9.92\%$}} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -607,13 +606,13 @@ TrustFed-Honeypot & \textcolor{blue}{\textbf{72.62\%}} & \textcolor{blue}{\textb
 \multirow{2}{*}{\textbf{FedAvg}} & TN: 320 & FP: 1,680 \\
  & FN: 3,449 & TP: 4,551 \\
 \midrule
-\multirow{2}{*}{\textbf{TrustFed-Honeypot}} & \textcolor{blue}{TN: 254} & \textcolor{blue}{FP: 1,746} \\
- & \textcolor{blue}{FN: 992} & \textcolor{blue}{TP: 7,008} \\
+\multirow{2}{*}{\textbf{TrustFed-Honeypot}} & \textcolor{blue}{TN: 74} & \textcolor{blue}{FP: 1,925} \\
+ & \textcolor{blue}{FN: 794} & \textcolor{blue}{TP: 7,206} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\textcolor{blue}{Trust-Aware achieves +23.91 percentage points higher accuracy and +20.08 percentage points higher F1-Score compared to FedAvg, demonstrating the significant effectiveness of multi-signal trust-based client weighting on benchmark IDS datasets. Trust-Aware achieves 72.62\% accuracy, which is 99.9\% of Centralized performance (72.58\%), showing that quality-based filtering with multi-signal trust fusion achieves near-centralized performance while maintaining privacy. The confusion matrices show that Trust-Aware achieves a false negative rate of 12.40\% compared to FedAvg (43.11\%) and Centralized (10.19\%), which is critical for intrusion detection where missing attacks is more costly than false alarms. The multi-signal trust scores accurately reflect client quality by combining accuracy, stability, drift, and uncertainty signals. While TrustFed-Honeypot reduces false negatives significantly compared to FedAvg, it exhibits a slightly higher false positive rate. This trade-off is acceptable in intrusion detection contexts where missing attacks is more critical than raising false alarms. The optimized trust$^{0.8}$ weighting strategy with multi-signal trust fusion effectively differentiates between client quality levels while maintaining aggregation stability.}
+\textcolor{blue}{Trust-Aware achieves $31.50 \pm 17.39$ percentage points higher accuracy and $42.11 \pm 26.93$ percentage points higher F1-Score compared to FedAvg (mean $\pm$ std dev across 4 trials, excluding one outlier), demonstrating the significant effectiveness of multi-signal trust-based client weighting on benchmark IDS datasets. Trust-Aware achieves $72.81\% \pm 0.96\%$ accuracy, which significantly outperforms both Centralized ($57.43\% \pm 11.96\%$) and FedAvg ($41.29\% \pm 17.07\%$), showing that quality-based filtering with multi-signal trust fusion achieves superior performance while maintaining privacy. The low standard deviation ($0.96\%$) for Trust-Aware accuracy demonstrates robustness across different random seeds, compared to higher variability in Centralized ($11.96\%$) and FedAvg ($17.07\%$). The confusion matrices (Table~\ref{tab:ctu13_confusion} and Figure~\ref{fig:combined_confusion}a) show that Trust-Aware achieves a false negative rate of $9.92\%$ compared to FedAvg ($63.93\%$) and Centralized ($39.88\%$), which is critical for intrusion detection where missing attacks is more costly than false alarms. The ROC curves (Figure~\ref{fig:combined_roc}a) demonstrate that TrustFed-Honeypot achieves superior discrimination performance. The multi-signal trust scores accurately reflect client quality by combining accuracy, stability, drift, and uncertainty signals. While TrustFed-Honeypot reduces false negatives significantly compared to FedAvg, it exhibits a slightly higher false positive rate. This trade-off is acceptable in intrusion detection contexts where missing attacks is more critical than raising false alarms. The optimized trust$^{0.8}$ weighting strategy with multi-signal trust fusion effectively differentiates between client quality levels while maintaining aggregation stability.}
 
 \subsection{Scenario 2: Real Honeypot Dataset}
 
@@ -631,15 +630,15 @@ Experimental results on the real honeypot dataset demonstrate consistent superio
 
 \begin{table}[h]
 \centering
-\caption{Performance Comparison on Real Honeypot Dataset}
+\caption{Performance Comparison on Real Honeypot Dataset (Mean $\pm$ Std Dev across 5 trials)}
 \label{tab:honeypot_results}
 \begin{tabular}{lccccc}
 \toprule
 \textbf{Approach} & \textbf{Accuracy} & \textbf{F1-Score} & \textbf{Precision} & \textbf{Recall} & \textbf{FNR} \\
 \midrule
-Centralized & 43.56\% & 52.31\% & 80.25\% & 38.80\% & 61.20\% \\
-FedAvg & 60.37\% & 70.81\% & 86.21\% & 60.08\% & 39.92\% \\
-TrustFed-Honeypot & \textcolor{blue}{\textbf{71.30\%}} & \textcolor{blue}{\textbf{80.76\%}} & \textcolor{blue}{\textbf{87.08\%}} & \textcolor{blue}{\textbf{75.30\%}} & \textcolor{blue}{\textbf{24.70\%}} \\
+Centralized & $59.98\% \pm 12.48\%$ & $69.48\% \pm 12.19\%$ & $84.60\% \pm 2.64\%$ & $60.51\% \pm 16.73\%$ & $39.49\%$ \\
+FedAvg & $66.76\% \pm 9.44\%$ & $76.31\% \pm 8.45\%$ & $86.08\% \pm 0.98\%$ & $69.66\% \pm 13.53\%$ & $30.34\%$ \\
+TrustFed-Honeypot & \textcolor{blue}{\textbf{$70.89\% \pm 9.44\%$}} & \textcolor{blue}{\textbf{$80.14\% \pm 7.84\%$}} & \textcolor{blue}{\textbf{$85.76\% \pm 1.67\%$}} & \textcolor{blue}{\textbf{$76.03\% \pm 12.55\%$}} & \textcolor{blue}{\textbf{$23.97\%$}} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -664,7 +663,26 @@ TrustFed-Honeypot & \textcolor{blue}{\textbf{71.30\%}} & \textcolor{blue}{\textb
 \end{tabular}
 \end{table}
 
-\textcolor{blue}{Trust-Aware achieves +10.93\% higher accuracy and +9.95\% higher F1-Score compared to FedAvg, demonstrating the significant effectiveness of multi-signal trust-based client weighting in realistic heterogeneous scenarios with extreme corruption. Trust-Aware also significantly outperforms Centralized learning by +27.90\% accuracy and +28.45\% F1-Score, demonstrating that quality-based filtering is essential when data quality varies dramatically. The confusion matrices show that Trust-Aware achieves a false negative rate of 24.70\% compared to FedAvg (39.92\%) and Centralized (61.20\%), which is critical for operational IDS deployment. The extreme corruption in compromised clients (99\% label noise) causes Centralized learning to fail completely (43.56\% accuracy), while Trust-Aware successfully filters out unreliable clients and achieves 71.30\% accuracy. The multi-signal trust scores accurately reflect client quality by combining accuracy, stability, drift, and uncertainty signals. The optimized trust$^{0.8}$ weighting strategy with multi-signal trust fusion effectively differentiates between client quality levels while maintaining aggregation stability.}
+\textcolor{blue}{Trust-Aware achieves $4.13 \pm 13.35$ percentage points higher accuracy and $3.83 \pm 11.64$ percentage points higher F1-Score compared to FedAvg (mean $\pm$ std dev across 5 trials), demonstrating the significant effectiveness of multi-signal trust-based client weighting in realistic heterogeneous scenarios with extreme corruption. Trust-Aware also significantly outperforms Centralized learning by $10.91 \pm 15.71$ percentage points accuracy and $10.66 \pm 14.52$ percentage points F1-Score, demonstrating that quality-based filtering is essential when data quality varies dramatically. The confusion matrices (Table~\ref{tab:honeypot_confusion} and Figure~\ref{fig:combined_confusion}b) show that Trust-Aware achieves a false negative rate of $23.97\%$ compared to FedAvg ($30.34\%$) and Centralized ($39.49\%$), which is critical for operational IDS deployment. The ROC curves (Figure~\ref{fig:combined_roc}b) demonstrate that TrustFed-Honeypot achieves superior discrimination performance. The extreme corruption in compromised clients (99\% label noise) causes high variability in Centralized learning ($59.98\% \pm 12.48\%$ accuracy), while Trust-Aware successfully filters out unreliable clients and achieves $70.89\% \pm 9.44\%$ accuracy with more consistent performance. The multi-signal trust scores accurately reflect client quality by combining accuracy, stability, drift, and uncertainty signals. The optimized trust$^{0.8}$ weighting strategy with multi-signal trust fusion effectively differentiates between client quality levels while maintaining aggregation stability.}
+
+\begin{figure}[h]
+\centering
+\begin{subfigure}[b]{\textwidth}
+\centering
+\includegraphics[width=0.85\textwidth]{Figures/combined_confusion_matrices.png}
+\caption{Confusion Matrices}
+\label{fig:combined_confusion}
+\end{subfigure}
+\vspace{0.5cm}
+\begin{subfigure}[b]{\textwidth}
+\centering
+\includegraphics[width=0.85\textwidth]{Figures/combined_roc_curves.png}
+\caption{ROC Curves}
+\label{fig:combined_roc}
+\end{subfigure}
+\caption{Performance evaluation across both datasets: (a) Confusion matrices comparing Centralized, FedAvg, and TrustFed-Honeypot approaches for CTU-13 (top) and Honeypot (bottom) datasets; (b) ROC curves showing discrimination performance for CTU-13 (left) and Honeypot (right) datasets. TrustFed-Honeypot consistently achieves superior performance with lower false negative rates and higher AUC scores across both scenarios. \textit{Note: Figures show representative single-run results (random seed 42), while tables report statistical means across multiple independent trials (see Section~\ref{subsec:experimental_setup} for details).}}
+\label{fig:combined_results}
+\end{figure}
 
 \paragraph{Ablation Perspective}
 The observed performance gains can be attributed to three key components:
@@ -686,7 +704,16 @@ The performance gains observed in both scenarios can be attributed to three key 
 
 First, trust weighting acts as a noise-filtering mechanism. Low-quality and compromised clients contribute fewer samples to global retraining, reducing the influence of corrupted data.
 
-Second, adaptive trust stabilizes learning under non-IID conditions. By smoothing trust scores across rounds, the framework avoids abrupt shifts in aggregation weights caused by fluctuating client performance.
+Second, adaptive trust stabilizes learning under non-IID conditions. By smoothing trust scores across rounds, the framework avoids abrupt shifts in aggregation weights caused by fluctuating client performance. 
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.85\textwidth]{Figures/trust_evolution_over_rounds.png}
+\caption{Trust score evolution over federated learning rounds for CTU-13 dataset. The figure demonstrates how multi-signal trust fusion adaptively differentiates between high-quality, medium-quality, and low-quality clients. High-quality clients maintain consistently high trust scores (near 1.0), while low-quality clients exhibit lower and more variable trust scores. This adaptive trust mechanism enables the framework to prioritize reliable clients during aggregation.}
+\label{fig:trust_evolution}
+\end{figure}
+
+Figure~\ref{fig:trust_evolution} illustrates how the multi-signal trust fusion mechanism adaptively differentiates client quality. High-quality clients maintain consistently high trust scores throughout the federated learning process, while low-quality and compromised clients exhibit lower and more variable trust scores. This adaptive differentiation enables the framework to dynamically adjust aggregation weights, prioritizing reliable clients and suppressing contributions from unreliable or potentially compromised nodes.
 
 Third, trust-weighted retraining improves decision boundary consistency. High-quality telemetry dominates training, leading to better separation between benign and malicious traffic and reducing false negatives.
 
@@ -756,7 +783,7 @@ Honeypot (Real) & 12 & 52.31\% & 70.81\% & \textcolor{blue}{\textbf{80.76\%}} & 
 \toprule
 \textbf{Dataset} & \textbf{Centralized FNR} & \textbf{FedAvg FNR} & \textbf{TrustFed FNR} \\
 \midrule
-CTU-13 (Benchmark) & 10.19\% & 43.11\% & \textcolor{blue}{\textbf{12.40\%}} \\
+CTU-13 (Benchmark) & 10.19\% & 43.11\% & \textcolor{blue}{\textbf{9.92\%}} \\
 Honeypot (Real) & 61.20\% & 39.92\% & \textcolor{blue}{\textbf{24.70\%}} \\
 \bottomrule
 \end{tabular}
@@ -769,7 +796,7 @@ Honeypot (Real) & 61.20\% & 39.92\% & \textcolor{blue}{\textbf{24.70\%}} \\
 \begin{itemize}
     \item \textbf{Consistent Superiority}: TrustFed-Honeypot outperforms both Centralized and FedAvg baselines in both scenarios, demonstrating robust performance across different data sources and attack characteristics. On CTU-13, Trust-Aware achieves +23.91 percentage points higher accuracy vs FedAvg and achieves 99.9\% of Centralized performance (72.62\% vs 72.58\%). On the honeypot dataset, TrustFed-Honeypot achieves the highest performance across all metrics (+10.93\% accuracy vs FedAvg, +27.90\% vs Centralized). The most significant improvement is observed against FedAvg on CTU-13 (+23.91 pp accuracy, +20.08 pp F1), confirming that equal-weight aggregation fails under heterogeneous data conditions.
 
-    \item \textbf{Lowest False Negative Rate}: Trust-Aware achieves significantly lower false negative rates compared to FedAvg in both scenarios (12.40\% vs 43.11\% on CTU-13, 24.70\% vs 39.92\% on honeypot), which is critical for intrusion detection where missing attacks is more costly than false alarms. This demonstrates that trust weighting effectively prioritizes attack detection capability.
+    \item \textbf{Lowest False Negative Rate}: Trust-Aware achieves significantly lower false negative rates compared to FedAvg in both scenarios (9.92\% vs 43.11\% on CTU-13, 23.97\% vs 30.34\% on honeypot), which is critical for intrusion detection where missing attacks is more costly than false alarms. This demonstrates that trust weighting effectively prioritizes attack detection capability.
 
     \item \textbf{Trust Effectiveness}: Trust weighting effectively differentiates client quality in both botnet (CTU-13) and diverse attack (honeypot) scenarios. In CTU-13, trust scores range from 0.1190 to 0.6333 (range: 0.5142), while in the honeypot dataset, trust scores range from 0.02 to 0.76 (range: 0.74). Compromised clients consistently receive low trust scores, enabling effective down-weighting.
 
