@@ -1,5 +1,9 @@
 # Trust-Aware Federated Honeypot Learning for Intrusion Detection
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18786479.svg)](https://doi.org/10.5281/zenodo.18786479)
+
+
+
 This project implements a trust-aware federated learning system for intrusion detection using honeypot-generated network traffic data. The system enables multiple honeypots to collaboratively train a shared intrusion detection model without sharing raw data, while weighting contributions based on each honeypot's reliability (trust score).
 
 > **🚀 New to the project?** Start with the [Quick Start Guide](QUICK_START_GUIDE.md) for step-by-step instructions from setup to results analysis.
