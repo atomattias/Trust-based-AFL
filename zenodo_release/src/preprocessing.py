@@ -134,15 +134,6 @@ def prepare_features(df: pd.DataFrame, exclude_columns: Optional[list] = None) -
     X = X[numeric_cols]
     
     # Fill any NaN values with 0
-    X = X.replace([np.inf, -np.inf], np.nan).fillna(0)
-
-    # Defensive normalization:
-    # Honeypot telemetry can contain extremely large magnitudes (or heavy-tailed counts) which can
-    # trigger hard floating-point exceptions inside low-level BLAS during dot products.
-    X = X.astype(float)
-    X = X.clip(lower=-1e6, upper=1e6)
-    std = X.std(axis=0, ddof=0).replace(0.0, 1.0)
-    mean = X.mean(axis=0)
-    X = (X - mean) / (std + 1e-8)
+    X = X.fillna(0)
     
     return X

@@ -16,7 +16,7 @@ from sklearn.neural_network import MLPClassifier
 try:
     from xgboost import XGBClassifier
     XGBOOST_AVAILABLE = True
-except Exception:
+except ImportError:
     XGBOOST_AVAILABLE = False
 
 # Set up logging
@@ -157,14 +157,6 @@ class FedAvgAggregator:
                         use_label_encoder=False
                     )
                 elif self.model_type == 'logistic_regression':
-                    # Logistic regression requires at least 2 classes; fall back if aggregated data is single-class
-                    unique_classes = np.unique(y_global.values) if hasattr(y_global, "values") else np.unique(y_global)
-                    if len(unique_classes) < 2:
-                        from sklearn.dummy import DummyClassifier
-                        self.global_model = DummyClassifier(strategy='constant', constant=int(unique_classes[0]) if len(unique_classes) else 0)
-                        self.global_model.fit(X_global, y_global)
-                        return self.global_model
-
                     self.global_model = SGDClassifier(
                         loss='log_loss',
                         random_state=42,
@@ -276,13 +268,7 @@ class TrustAwareAggregator:
     This is the proposed method that weights client contributions by their trust scores.
     """
     
-    def __init__(
-        self,
-        model_type: str = 'random_forest',
-        trust_manager: Optional['TrustManager'] = None,
-        beta: float = 0.8,
-        min_trust: float = 0.0
-    ):
+    def __init__(self, model_type: str = 'random_forest', trust_manager: Optional['TrustManager'] = None, beta: float = 0.8):
         """
         Initialize the trust-aware aggregator.
         
@@ -294,7 +280,6 @@ class TrustAwareAggregator:
         self.model_type = model_type
         self.trust_manager = trust_manager
         self.beta = beta  # Trust exponent for sub-linear weighting
-        self.min_trust = min_trust  # Optional hard threshold (exclude very low-trust clients)
         self.global_model = None
         self.client_weights = None
     
@@ -345,11 +330,7 @@ class TrustAwareAggregator:
         # β=0.85-0.9: Slightly more differentiation (tested, performs worse)
         # β=1.0+ (linear/super-linear): Strong differentiation, less stable
         # Original β=0.8 is optimal after testing
-        trust_clipped = np.maximum(trust_scores, 0.0)
-        if self.min_trust > 0:
-            trust_clipped = np.where(trust_clipped >= self.min_trust, trust_clipped, 0.0)
-
-        trust_powered = trust_clipped ** self.beta  # Sub-linear weighting (configurable)
+        trust_powered = np.maximum(trust_scores, 0.0) ** self.beta  # Sub-linear weighting (configurable)
         
         total_trust_powered = np.sum(trust_powered)
         if total_trust_powered == 0:
@@ -385,16 +366,11 @@ class TrustAwareAggregator:
                     
                     # Trust-proportional sampling with minimum floor
                     # All clients get at least some samples (maintains diversity)
-                    # Reduce minimum floor to avoid forcing low-trust clients into the retraining set
-                    min_samples_per_client = 0
+                    min_samples_per_client = 3000  # Minimum floor for all clients
                     
                     # Use trust^1.5 weights directly (already normalized)
                     target_samples = int(total_budget * trust_weight)
                     target_samples = max(min_samples_per_client, min(target_samples, max_samples_per_client))
-
-                    # If a client is effectively excluded (e.g., below min_trust), skip it.
-                    if target_samples <= 0:
-                        continue
                     
                     if len(X_train) > target_samples:
                         # Sample proportionally to trust weight, maintaining class balance
@@ -482,13 +458,6 @@ class TrustAwareAggregator:
                         use_label_encoder=False
                     )
                 elif self.model_type == 'logistic_regression':
-                    unique_classes = np.unique(y_global.values) if hasattr(y_global, "values") else np.unique(y_global)
-                    if len(unique_classes) < 2:
-                        from sklearn.dummy import DummyClassifier
-                        self.global_model = DummyClassifier(strategy='constant', constant=int(unique_classes[0]) if len(unique_classes) else 0)
-                        self.global_model.fit(X_global, y_global)
-                        return self.global_model
-
                     self.global_model = SGDClassifier(
                         loss='log_loss',
                         random_state=42,

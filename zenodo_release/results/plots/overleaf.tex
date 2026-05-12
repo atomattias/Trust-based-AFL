@@ -397,8 +397,6 @@ S_i^r =
 + \lambda_4 (1 - Unc_i^r)
 \end{equation}
 
-The fusion weights $\lambda_1, \lambda_2, \lambda_3, \lambda_4$ are \textbf{fixed} (not adaptable during training) and \textbf{not equal}, reflecting the relative importance of each signal. The weights are set to $\lambda_1=1.0$, $\lambda_2=0.3$, $\lambda_3=0.2$, $\lambda_4=0.2$ based on empirical optimization, prioritizing detection accuracy ($\lambda_1$) while incorporating stability, drift, and uncertainty signals at lower weights. This fixed-weight design provides stability and interpretability, as the relative contribution of each signal remains consistent across rounds. While adaptive weight tuning could potentially improve performance in specific scenarios, fixed weights ensure predictable behavior and reduce computational overhead during trust estimation.
-
 After normalization:
 
 \begin{equation}
@@ -462,22 +460,22 @@ For $0 < \beta < 1$, $f(T)$ is concave. Concavity compresses large trust dispari
 
 Beyond parameter averaging, the server performs trust-weighted retraining:
 
-    \begin{equation}
+\begin{equation}
 D^{global} =
 \bigcup_{i=1}^{K}
 \mathrm{Sample}!\left(D_i, \pi_i |D_i|\right)
-    \end{equation}
+\end{equation}
 
-    \begin{equation}
+\begin{equation}
 w^{r+1} = \mathrm{Train}!\left(D^{global}\right),
-    \end{equation}
+\end{equation}
 
 where
 
-    \begin{equation}
+\begin{equation}
 \pi_i =
 \frac{(T_i^r)^\beta}{\sum_{j=1}^{K}(T_j^r)^\beta}.
-    \end{equation}
+\end{equation}
 
 This produces a fully retrained global model rather than a weighted parameter average. Unlike Byzantine-robust aggregators such as Krum \cite{blanchard2017machine} or coordinate-wise Median \cite{yin2018byzantine}, which filter gradients, trust-weighted retraining reshapes the effective training distribution toward reliable telemetry.
 
@@ -570,7 +568,6 @@ These approaches can be integrated in future work to provide complementary robus
 \textbf{Experimental Configuration:}
 \begin{itemize}
     \item \textbf{Number of Clients}: 7 clients (3 high-quality, 2 medium-quality, 2 low-quality)
-    \item \textbf{Feature Dimension}: $d = 41$ features (after preprocessing)
     \item \textbf{Total Training Samples}: ~91,000 samples
     \item \textbf{Test Set}: 10,000 samples (2,000 benign, 8,000 attack)
     \item \textbf{Model}: Logistic Regression (SGDClassifier)
@@ -707,7 +704,7 @@ The performance gains observed in both scenarios can be attributed to three key 
 
 First, trust weighting acts as a noise-filtering mechanism. Low-quality and compromised clients contribute fewer samples to global retraining, reducing the influence of corrupted data.
 
-Second, adaptive trust stabilizes learning under non-IID conditions. By smoothing trust scores across rounds, the framework avoids abrupt shifts in aggregation weights caused by fluctuating client performance.
+Second, adaptive trust stabilizes learning under non-IID conditions. By smoothing trust scores across rounds, the framework avoids abrupt shifts in aggregation weights caused by fluctuating client performance. 
 
 \begin{figure}[h]
 \centering
@@ -824,21 +821,6 @@ validation on additional datasets is required.}
 The proposed trust-aware aggregation introduces minimal overhead compared to standard federated learning. Trust computation requires O(K) operations per round, which is negligible relative to local training cost.
 
 The primary additional cost arises from trust-weighted data sampling and global retraining. However, this cost remains proportional to the aggregated dataset size and does not introduce significant scalability limitations.
-
-\paragraph{Total Communication Volume Across Training Rounds.}
-To contextualize deployment overhead, we quantify the aggregate communication cost across all participating clients and federated rounds. In the CTU-13 configuration ($d = 41$ features), the per-client per-round communication cost for FedAvg is 168 bytes (41 model weights + 1 bias term, each 4 bytes). Across 7 clients and 10 communication rounds, the total volume is:
-
-\[
-C_{\text{FedAvg,total}} = 168 \times 7 \times 10 = 11{,}760 \text{ bytes} \approx 11.5 \text{ KB}.
-\]
-
-For the proposed TrustFed framework, assuming transmission of 1,000 sampled feature vectors per client per round, the per-client cost is approximately 160 KB per round (1,000 vectors $\times$ 41 features $\times$ 4 bytes). Thus, the total communication volume becomes:
-
-\[
-C_{\text{TrustFed,total}} \approx 160 \text{ KB} \times 7 \times 10 = 11{,}200 \text{ KB} \approx 10.9 \text{ MB}.
-\]
-
-While TrustFed introduces higher communication overhead than standard FedAvg due to feature-level retraining, the total volume remains within manageable bounds for enterprise or cloud-based deployments, particularly given that flow-level feature representations are substantially smaller than raw packet captures. Furthermore, the sampling parameter $m_i$ provides a tunable mechanism to balance robustness and bandwidth consumption.
 
 Overall, the framework maintains linear scalability with respect to the number of clients and dataset size, making it suitable for practical deployment in distributed intrusion detection environments.
 

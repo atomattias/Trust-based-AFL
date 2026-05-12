@@ -103,29 +103,16 @@ def evaluate_model_on_test(
         else:
             y_pred_proba = None
     elif hasattr(model, 'predict'):
-        # Standard sklearn model or aggregator.
-        #
-        # IMPORTANT: On some macOS BLAS/OpenMP builds, sklearn linear-model predict() can trigger
-        # a hard floating-point exception inside safe_sparse_dot. If the model exposes linear
-        # coefficients, compute predictions manually to avoid BLAS-backed matmul.
-        if hasattr(model, "coef_") and hasattr(model, "intercept_"):
-            Xn = np.asarray(X_test, dtype=float)
-            w = np.asarray(model.coef_, dtype=float).reshape(-1)
-            b = float(np.asarray(model.intercept_, dtype=float).reshape(-1)[0])
-            z = (Xn * w).sum(axis=1) + b
-            p = 1.0 / (1.0 + np.exp(-np.clip(z, -50, 50)))
-            y_pred_proba = p
-            y_pred = (p >= 0.5).astype(int)
-        else:
-            y_pred = model.predict(X_test)
-            # Try to get probabilities
-            if hasattr(model, 'predict_proba'):
-                try:
-                    y_pred_proba = model.predict_proba(X_test)[:, 1]  # Probability of positive class
-                except Exception:
-                    y_pred_proba = None
-            else:
+        # Standard sklearn model or aggregator
+        y_pred = model.predict(X_test)
+        # Try to get probabilities
+        if hasattr(model, 'predict_proba'):
+            try:
+                y_pred_proba = model.predict_proba(X_test)[:, 1]  # Probability of positive class
+            except:
                 y_pred_proba = None
+        else:
+            y_pred_proba = None
     else:
         raise ValueError(f"Unknown model_type: {model_type}")
     

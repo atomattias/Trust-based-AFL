@@ -216,7 +216,7 @@ def plot_roc_curves(
             # Convert predictions to probabilities (simple approach)
             # For binary classification, use prediction as probability
             y_pred = result['y_pred']
-            y_proba = np.asarray(y_pred).astype(float)  # This is a simplification
+            y_proba = y_pred.astype(float)  # This is a simplification
             print(f"Warning: Using predictions as probabilities for {approach} (not ideal)")
         else:
             print(f"Warning: No predictions found for {approach}, skipping ROC curve")

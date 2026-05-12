@@ -457,12 +457,6 @@ class FederatedClient:
             # Add feature corruption
             feature_corruption_ratio = severity * 0.2  # Up to 20% feature corruption
             if feature_corruption_ratio > 0:
-                # Ensure numeric columns can accept additive Gaussian noise.
-                # Some datasets store numeric features as int64; adding float noise would error.
-                for col in X_train_df.columns:
-                    if X_train_df[col].dtype in [np.int64, np.float64]:
-                        X_train_df[col] = X_train_df[col].astype(float)
-
                 n_corrupt = int(len(X_train_df) * feature_corruption_ratio)
                 if n_corrupt > 0:
                     corrupt_indices = np.random.choice(len(X_train_df), size=n_corrupt, replace=False)
@@ -549,9 +543,7 @@ class FederatedClient:
         # Signal 1: Accuracy (validation accuracy)
         if self.val_metrics is None:
             self.evaluate()
-        # Use F1 as the primary detection-performance signal in IDS settings.
-        # Plain accuracy can be misleading under severe class imbalance or degenerate single-class predictions.
-        signals['accuracy'] = float(self.val_metrics.get('f1_score', self.val_metrics.get('accuracy', 0.0)))
+        signals['accuracy'] = self.val_metrics['accuracy']
         
         # Signal 2: Stability (inverse of variance of accuracy history)
         if len(self.accuracy_history) >= 2:

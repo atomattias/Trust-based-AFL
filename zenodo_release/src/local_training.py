@@ -6,7 +6,7 @@ This module handles training machine learning models at each honeypot client.
 
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.linear_model import SGDClassifier, LogisticRegression
+from sklearn.linear_model import SGDClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, confusion_matrix
 from typing import Dict, Tuple, Any, Optional
@@ -14,9 +14,7 @@ import pandas as pd
 try:
     from xgboost import XGBClassifier
     XGBOOST_AVAILABLE = True
-except Exception:
-    # On some macOS setups xgboost can be installed but fail to import at runtime
-    # due to missing OpenMP (libomp). Treat as unavailable unless fully usable.
+except ImportError:
     XGBOOST_AVAILABLE = False
 
 
@@ -40,13 +38,6 @@ def train_local_model(
     Returns:
         Tuple of (trained_model, training_metrics_dict)
     """
-    # Defensive sanitization: some honeypot feature pipelines can produce NaN/Inf.
-    # These can trigger hard floating-point exceptions inside BLAS during sklearn dot-products.
-    if isinstance(X_train, pd.DataFrame):
-        X_train = X_train.replace([np.inf, -np.inf], np.nan).fillna(0.0)
-    else:
-        X_train = np.nan_to_num(X_train, nan=0.0, posinf=0.0, neginf=0.0)
-
     if model_type == 'random_forest':
         n_estimators = model_kwargs.get('n_estimators', 350)  # Increased from 250 for better capacity
         model = RandomForestClassifier(
@@ -112,62 +103,12 @@ def train_local_model(
             }
             return model, train_metrics
         
-        # Client-side LR training is used mainly for computing per-client validation metrics and trust signals.
-        # Some macOS BLAS builds can raise hard floating-point exceptions in sklearn's dot-products.
-        # Use a small NumPy implementation that avoids BLAS-backed matrix multiply for stability.
-
-        class _NumpyLogReg:
-            def __init__(self, coef: np.ndarray, intercept: float):
-                self.coef_ = coef.reshape(1, -1)
-                self.intercept_ = np.array([float(intercept)])
-                self.classes_ = np.array([0, 1])
-
-            def predict_proba(self, X):
-                Xn = np.asarray(X, dtype=float)
-                w = self.coef_.ravel()
-                z = (Xn * w).sum(axis=1) + float(self.intercept_[0])
-                p = 1.0 / (1.0 + np.exp(-np.clip(z, -50, 50)))
-                return np.vstack([1.0 - p, p]).T
-
-            def predict(self, X):
-                proba = self.predict_proba(X)[:, 1]
-                return (proba >= 0.5).astype(int)
-
-        Xn = np.asarray(X_train, dtype=float)
-        yn = np.asarray(y_train, dtype=int).ravel()
-        n, d = Xn.shape
-
-        w = np.zeros(d, dtype=float)
-        b = 0.0
-        lr = float(model_kwargs.get('lr', 0.05))
-        epochs = int(model_kwargs.get('local_epochs', 2))
-        batch_size = int(model_kwargs.get('batch_size', 1024))
-        rng = np.random.default_rng(random_state)
-
-        for _ in range(max(1, epochs)):
-            idx = rng.permutation(n)
-            for start in range(0, n, batch_size):
-                bi = idx[start:start + batch_size]
-                Xb = Xn[bi]
-                yb = yn[bi]
-                z = (Xb * w).sum(axis=1) + b
-                p = 1.0 / (1.0 + np.exp(-np.clip(z, -50, 50)))
-                err = (p - yb)
-                grad_w = (Xb * err[:, None]).mean(axis=0)
-                grad_b = float(err.mean())
-                w -= lr * grad_w
-                b -= lr * grad_b
-
-        model = _NumpyLogReg(w, b)
-        # Compute training metrics and return (already trained).
-        y_train_pred = model.predict(Xn)
-        train_acc = accuracy_score(yn, y_train_pred)
-        train_f1 = f1_score(yn, y_train_pred, zero_division=0)
-        training_metrics = {
-            'train_accuracy': float(train_acc),
-            'train_f1': float(train_f1)
-        }
-        return model, training_metrics
+        model = SGDClassifier(
+            loss='log_loss',
+            max_iter=model_kwargs.get('max_iter', 1000),
+            random_state=random_state,
+            n_jobs=-1
+        )
     else:
         raise ValueError(f"Unknown model_type: {model_type}. Use 'random_forest', 'logistic_regression', 'mlp', or 'xgboost'")
     
@@ -203,11 +144,6 @@ def evaluate_model(
     Returns:
         Dictionary with evaluation metrics
     """
-    if isinstance(X_val, pd.DataFrame):
-        X_val = X_val.replace([np.inf, -np.inf], np.nan).fillna(0.0)
-    else:
-        X_val = np.nan_to_num(X_val, nan=0.0, posinf=0.0, neginf=0.0)
-
     y_pred = model.predict(X_val)
     
     metrics = {

@@ -30,11 +30,8 @@ from local_training import train_local_model
 from federated_client import FederatedClient
 from federated_server import FedAvgAggregator, TrustAwareAggregator, EnsembleAggregator, TrustManager
 from evaluation import evaluate_model_on_test, generate_results_summary
+from visualization import save_all_visualizations
 from config_loader import load_trust_config, apply_trust_config
-
-# IMPORTANT: Do not import matplotlib/visualization at module import time.
-# Some macOS environments can crash during matplotlib font initialization.
-save_all_visualizations = None
 
 
 class ExperimentRunner:
@@ -80,11 +77,9 @@ class ExperimentRunner:
             # Load configuration
             trust_config = load_trust_config()
             
-            # IMPORTANT: do NOT load persistent trust histories by default.
-            # Persistent trust is useful for long-lived deployments, but it is a confounder for experiments
-            # because it leaks state across trials/datasets. Only enable storage if explicitly requested.
+            # Override with command-line arguments if provided
             if trust_storage_dir is None:
-                trust_storage_dir = None
+                trust_storage_dir = trust_config.get('trust_manager', {}).get('storage_dir', 'results/trust_history')
             
             # Create TrustManager with config or defaults
             trust_mgr_config = trust_config.get('trust_manager', {})
@@ -122,9 +117,8 @@ class ExperimentRunner:
             if trust_alpha != 0.7:
                 self.trust_manager.alpha = trust_alpha
             
-            # Load existing trust histories only if storage_dir was explicitly provided
-            if trust_storage_dir:
-                self.trust_manager.load_all_trust_histories()
+            # Load existing trust histories if available
+            self.trust_manager.load_all_trust_histories()
         else:
             self.trust_manager = None
             self.use_multi_signal = False
@@ -140,13 +134,7 @@ class ExperimentRunner:
         csv_files = list(self.data_dir.glob('*.csv'))
         
         # Filter out benign files for client selection (we'll use them for mixing)
-        # Also exclude reserved / evaluation-only files (test sets) from ever becoming clients.
-        all_attack_files = [
-            f for f in csv_files
-            if 'benign' not in f.name.lower()
-            and 'test_set' not in f.name.lower()
-            and 'heterogeneous_test_set' not in f.name.lower()
-        ]
+        all_attack_files = [f for f in csv_files if 'benign' not in f.name.lower()]
         benign_files = [f for f in csv_files if 'benign' in f.name.lower()]
         
         # Check for heterogeneous clients (created by create_heterogeneous_clients.py)
@@ -517,212 +505,6 @@ class ExperimentRunner:
             return self._approach_3_multi_round(X_test, y_test)
         else:
             return self._approach_3_single_round(X_test, y_test)
-
-    def approach_4_fedprox(self, X_test: pd.DataFrame, y_test: pd.Series, mu: float = 1e-3, local_epochs: int = 1) -> Dict[str, Any]:
-        """
-        Approach 4: FedProx-style baseline (logistic regression only).
-
-        Notes:
-        - This codebase's primary FL baseline uses server-side retraining on aggregated samples.
-          FedProx is natively defined for parameter-update-based FL under non-IID data.
-        - Here we provide a parameter-update-based logistic regression baseline that (a) initializes
-          clients from the global model each round and (b) increases proximal-like regularization
-          via L2 penalty strength (mu) during local updates.
-        """
-        if self.model_type != 'logistic_regression':
-            raise ValueError("FedProx baseline is implemented only for logistic_regression in this project.")
-
-        import numpy as np
-        # Import directly to avoid triggering src/__init__.py (which imports visualization).
-        from evaluation import compute_metrics
-
-        print("\n" + "=" * 60)
-        print("Approach 4: FedProx-Style Federated Learning (Logistic Regression)")
-        print("=" * 60)
-        print(f"Config: rounds={self.num_rounds}, local_epochs={local_epochs}, mu={mu}")
-
-        # Canonical feature schema (union across clients)
-        all_cols = set()
-        for c in self.clients:
-            all_cols.update(c.X_train.columns)
-        all_cols = sorted(list(all_cols))
-
-        # Align test
-        X_test_aligned = X_test.reindex(columns=all_cols, fill_value=0)
-
-        # Helper: sigmoid with numeric stability
-        def _sigmoid(z: np.ndarray) -> np.ndarray:
-            z = np.clip(z, -50, 50)
-            return 1.0 / (1.0 + np.exp(-z))
-
-        # Convert test to numpy and add bias column
-        X_test_np = X_test_aligned.to_numpy(dtype=float, copy=False)
-        y_test_np = y_test.to_numpy(dtype=int, copy=False)
-        X_test_b = np.hstack([X_test_np, np.ones((X_test_np.shape[0], 1), dtype=float)])
-
-        # Initialize global weights (including bias as last component)
-        d = len(all_cols)
-        w_global = np.zeros((d + 1,), dtype=float)
-
-        # Multi-round FedProx loop (pure numpy SGD with proximal term)
-        for r in range(1, max(1, self.num_rounds) + 1):
-            w_locals = []
-            weights = []
-
-            for client in self.clients:
-                Xc_df = client.X_train.reindex(columns=all_cols, fill_value=0)
-                yc_s = client.y_train
-
-                # Cap per-client samples for runtime stability
-                max_samples_per_client = 15000
-                if len(Xc_df) > max_samples_per_client:
-                    from sklearn.utils import resample
-                    Xc_df, yc_s = resample(
-                        Xc_df, yc_s,
-                        n_samples=max_samples_per_client,
-                        random_state=self.random_state + r,
-                        stratify=yc_s if len(np.unique(yc_s)) > 1 else None
-                    )
-
-                Xc = Xc_df.to_numpy(dtype=float, copy=False)
-                yc = yc_s.to_numpy(dtype=int, copy=False)
-                Xc_b = np.hstack([Xc, np.ones((Xc.shape[0], 1), dtype=float)])
-
-                # Skip degenerate single-class clients for this baseline
-                if len(np.unique(yc)) < 2:
-                    continue
-
-                w = w_global.copy()
-                lr = 0.05
-                batch_size = 1024
-
-                rng = np.random.default_rng(self.random_state + r)
-                for _ in range(max(1, local_epochs)):
-                    idx = rng.permutation(Xc_b.shape[0])
-                    for start in range(0, len(idx), batch_size):
-                        batch_idx = idx[start:start + batch_size]
-                        Xb = Xc_b[batch_idx]
-                        yb = yc[batch_idx]
-
-                        # Avoid BLAS-backed matmul (can raise hard FPE on some macOS builds)
-                        z = (Xb * w).sum(axis=1)
-                        p = _sigmoid(z)
-                        err = (p - yb)
-                        grad = (Xb * err[:, None]).mean(axis=0)
-
-                        # Proximal term towards global weights (do not penalize bias)
-                        prox = w - w_global
-                        prox[-1] = 0.0
-                        grad = grad + mu * prox
-
-                        w = w - lr * grad
-
-                w_locals.append(w)
-                weights.append(len(Xc_b))
-
-            weights = np.array(weights, dtype=float)
-            weights = weights / weights.sum() if weights.sum() > 0 else np.ones_like(weights) / len(weights)
-
-            if w_locals:
-                w_global = np.sum([w_i * w_l for w_i, w_l in zip(weights, w_locals)], axis=0)
-
-        # Evaluate
-        y_proba = _sigmoid((X_test_b * w_global).sum(axis=1))
-        y_pred = (y_proba >= 0.5).astype(int)
-        metrics = compute_metrics(y_test_np, y_pred)
-        metrics['y_pred_proba'] = y_proba.tolist()
-        metrics['y_pred'] = y_pred.tolist()
-        metrics['y_true'] = y_test_np.tolist()
-        return metrics
-
-    def approach_5_coordinate_median(self, X_test: pd.DataFrame, y_test: pd.Series, local_epochs: int = 1) -> Dict[str, Any]:
-        """
-        Approach 5: Coordinate-wise median robust aggregation (logistic regression only).
-
-        Uses the same local update loop as Approach 4 but aggregates parameters via coordinate-wise median.
-        """
-        if self.model_type != 'logistic_regression':
-            raise ValueError("Coordinate-wise median baseline is implemented only for logistic_regression in this project.")
-
-        import numpy as np
-        # Import directly to avoid triggering src/__init__.py (which imports visualization).
-        from evaluation import compute_metrics
-
-        print("\n" + "=" * 60)
-        print("Approach 5: Robust Aggregation (Coordinate-wise Median, Logistic Regression)")
-        print("=" * 60)
-        print(f"Config: rounds={self.num_rounds}, local_epochs={local_epochs}")
-
-        all_cols = set()
-        for c in self.clients:
-            all_cols.update(c.X_train.columns)
-        all_cols = sorted(list(all_cols))
-        # Helper
-        def _sigmoid(z: np.ndarray) -> np.ndarray:
-            z = np.clip(z, -50, 50)
-            return 1.0 / (1.0 + np.exp(-z))
-
-        X_test_aligned = X_test.reindex(columns=all_cols, fill_value=0)
-        X_test_np = X_test_aligned.to_numpy(dtype=float, copy=False)
-        y_test_np = y_test.to_numpy(dtype=int, copy=False)
-        X_test_b = np.hstack([X_test_np, np.ones((X_test_np.shape[0], 1), dtype=float)])
-
-        d = len(all_cols)
-        w_global = np.zeros((d + 1,), dtype=float)
-
-        for r in range(1, max(1, self.num_rounds) + 1):
-            w_locals = []
-
-            for client in self.clients:
-                Xc_df = client.X_train.reindex(columns=all_cols, fill_value=0)
-                yc_s = client.y_train
-
-                max_samples_per_client = 15000
-                if len(Xc_df) > max_samples_per_client:
-                    from sklearn.utils import resample
-                    Xc_df, yc_s = resample(
-                        Xc_df, yc_s,
-                        n_samples=max_samples_per_client,
-                        random_state=self.random_state + r,
-                        stratify=yc_s if len(np.unique(yc_s)) > 1 else None
-                    )
-
-                Xc = Xc_df.to_numpy(dtype=float, copy=False)
-                yc = yc_s.to_numpy(dtype=int, copy=False)
-                Xc_b = np.hstack([Xc, np.ones((Xc.shape[0], 1), dtype=float)])
-
-                if len(np.unique(yc)) < 2:
-                    continue
-
-                w = w_global.copy()
-                lr = 0.05
-                batch_size = 1024
-                rng = np.random.default_rng(self.random_state + r)
-                for _ in range(max(1, local_epochs)):
-                    idx = rng.permutation(Xc_b.shape[0])
-                    for start in range(0, len(idx), batch_size):
-                        batch_idx = idx[start:start + batch_size]
-                        Xb = Xc_b[batch_idx]
-                        yb = yc[batch_idx]
-                        z = (Xb * w).sum(axis=1)
-                        p = _sigmoid(z)
-                        err = (p - yb)
-                        grad = (Xb * err[:, None]).mean(axis=0)
-                        w = w - lr * grad
-
-                w_locals.append(w)
-
-            # Robust aggregation
-            if w_locals:
-                w_global = np.median(np.stack(w_locals, axis=0), axis=0)
-
-        y_proba = _sigmoid((X_test_b * w_global).sum(axis=1))
-        y_pred = (y_proba >= 0.5).astype(int)
-        metrics = compute_metrics(y_test_np, y_pred)
-        metrics['y_pred_proba'] = y_proba.tolist()
-        metrics['y_pred'] = y_pred.tolist()
-        metrics['y_true'] = y_test_np.tolist()
-        return metrics
     
     def _approach_3_single_round(self, X_test: pd.DataFrame, y_test: pd.Series) -> Dict[str, Any]:
         """
@@ -756,8 +538,7 @@ class ExperimentRunner:
         # Use TrustAwareAggregator with retraining (true trust-aware FedAvg)
         print("\nAggregating client models with trust-weighted retraining (true trust-aware FedAvg)...")
         print("  Clients weighted by trust scores (quality-based weighting)")
-        # Exclude very low-trust clients (helps under partial compromise)
-        aggregator = TrustAwareAggregator(model_type=self.model_type, min_trust=0.6)
+        aggregator = TrustAwareAggregator(model_type=self.model_type)
         global_model = aggregator.aggregate(self.client_updates, use_retraining=True)
         
         # Display client weights
@@ -775,17 +556,9 @@ class ExperimentRunner:
         print(f"  Trust-weighted: High-trust clients get more, low-trust get less")
         
         # Evaluate global model
-        # CRITICAL: Align test set features to the server-side aggregated training columns.
-        # Using a single client's columns can cause feature-name mismatches (and invalid comparisons).
-        if hasattr(aggregator, 'training_feature_columns') and aggregator.training_feature_columns:
-            X_test_aligned = X_test.reindex(columns=aggregator.training_feature_columns, fill_value=0)
-        elif len(self.clients) > 0:
-            # Fallback: union of all client training columns (stable, avoids missing features)
-            all_train_columns = set()
-            for client in self.clients:
-                all_train_columns.update(client.X_train.columns)
-            all_train_columns = sorted(list(all_train_columns))
-            X_test_aligned = X_test.reindex(columns=all_train_columns, fill_value=0)
+        # Align test set features with training features (use first client's features as reference)
+        if len(self.clients) > 0:
+            X_test_aligned = X_test.reindex(columns=self.clients[0].X_train.columns, fill_value=0)
         else:
             X_test_aligned = X_test
         
@@ -980,8 +753,7 @@ class ExperimentRunner:
         # Re-aggregate with final trust scores for final evaluation
         final_aggregator = TrustAwareAggregator(
             model_type=self.model_type,
-            trust_manager=self.trust_manager,
-            min_trust=0.6
+            trust_manager=self.trust_manager
         )
         final_global_model = final_aggregator.aggregate(self.client_updates, use_retraining=True)
         
@@ -1161,17 +933,10 @@ class ExperimentRunner:
             # User provided test CSV
             X_test, y_test = self.prepare_test_data(self.test_csv)
         
-        # Run core approaches
+        # Run all three approaches
         centralized_results = self.approach_1_centralized(X_test, y_test)
         federated_results = self.approach_2_federated_equal_weight(X_test, y_test)
         trust_aware_results = self.approach_3_trust_aware(X_test, y_test)
-
-        # Additional baselines to minimize reviewer rejection risk (logistic regression only)
-        fedprox_results = None
-        median_results = None
-        if self.model_type == 'logistic_regression':
-            fedprox_results = self.approach_4_fedprox(X_test, y_test, mu=1e-3, local_epochs=1)
-            median_results = self.approach_5_coordinate_median(X_test, y_test, local_epochs=1)
         
         # Generate summary
         client_info = [client.get_info() for client in self.clients]
@@ -1187,22 +952,13 @@ class ExperimentRunner:
         print("\n" + "="*60)
         print("RESULTS COMPARISON")
         print("="*60)
-        if fedprox_results is not None and median_results is not None:
-            print(f"\n{'Metric':<25} {'Centralized':<12} {'FedAvg':<12} {'Trust':<12} {'FedProx':<12} {'Median':<12}")
-            print("-" * 85)
-            print(f"{'Accuracy':<25} {centralized_results['accuracy']:<12.4f} {federated_results['accuracy']:<12.4f} {trust_aware_results['accuracy']:<12.4f} {fedprox_results['accuracy']:<12.4f} {median_results['accuracy']:<12.4f}")
-            print(f"{'F1-Score':<25} {centralized_results['f1_score']:<12.4f} {federated_results['f1_score']:<12.4f} {trust_aware_results['f1_score']:<12.4f} {fedprox_results['f1_score']:<12.4f} {median_results['f1_score']:<12.4f}")
-            print(f"{'Precision':<25} {centralized_results['precision']:<12.4f} {federated_results['precision']:<12.4f} {trust_aware_results['precision']:<12.4f} {fedprox_results['precision']:<12.4f} {median_results['precision']:<12.4f}")
-            print(f"{'Recall':<25} {centralized_results['recall']:<12.4f} {federated_results['recall']:<12.4f} {trust_aware_results['recall']:<12.4f} {fedprox_results['recall']:<12.4f} {median_results['recall']:<12.4f}")
-            print(f"{'False Positive Rate':<25} {centralized_results['false_positive_rate']:<12.4f} {federated_results['false_positive_rate']:<12.4f} {trust_aware_results['false_positive_rate']:<12.4f} {fedprox_results['false_positive_rate']:<12.4f} {median_results['false_positive_rate']:<12.4f}")
-        else:
-            print(f"\n{'Metric':<25} {'Centralized':<15} {'FedAvg':<15} {'Trust-Aware':<15}")
-            print("-" * 70)
-            print(f"{'Accuracy':<25} {centralized_results['accuracy']:<15.4f} {federated_results['accuracy']:<15.4f} {trust_aware_results['accuracy']:<15.4f}")
-            print(f"{'F1-Score':<25} {centralized_results['f1_score']:<15.4f} {federated_results['f1_score']:<15.4f} {trust_aware_results['f1_score']:<15.4f}")
-            print(f"{'Precision':<25} {centralized_results['precision']:<15.4f} {federated_results['precision']:<15.4f} {trust_aware_results['precision']:<15.4f}")
-            print(f"{'Recall':<25} {centralized_results['recall']:<15.4f} {federated_results['recall']:<15.4f} {trust_aware_results['recall']:<15.4f}")
-            print(f"{'False Positive Rate':<25} {centralized_results['false_positive_rate']:<15.4f} {federated_results['false_positive_rate']:<15.4f} {trust_aware_results['false_positive_rate']:<15.4f}")
+        print(f"\n{'Metric':<25} {'Centralized':<15} {'FedAvg':<15} {'Trust-Aware':<15}")
+        print("-" * 70)
+        print(f"{'Accuracy':<25} {centralized_results['accuracy']:<15.4f} {federated_results['accuracy']:<15.4f} {trust_aware_results['accuracy']:<15.4f}")
+        print(f"{'F1-Score':<25} {centralized_results['f1_score']:<15.4f} {federated_results['f1_score']:<15.4f} {trust_aware_results['f1_score']:<15.4f}")
+        print(f"{'Precision':<25} {centralized_results['precision']:<15.4f} {federated_results['precision']:<15.4f} {trust_aware_results['precision']:<15.4f}")
+        print(f"{'Recall':<25} {centralized_results['recall']:<15.4f} {federated_results['recall']:<15.4f} {trust_aware_results['recall']:<15.4f}")
+        print(f"{'False Positive Rate':<25} {centralized_results['false_positive_rate']:<15.4f} {federated_results['false_positive_rate']:<15.4f} {trust_aware_results['false_positive_rate']:<15.4f}")
         
         # Save results
         results_dict = {
@@ -1211,10 +967,6 @@ class ExperimentRunner:
             'trust_aware': trust_aware_results,
             'summary': summary
         }
-        if fedprox_results is not None:
-            results_dict['fedprox'] = fedprox_results
-        if median_results is not None:
-            results_dict['coordinate_median'] = median_results
         
         # Save to JSON
         os.makedirs('results/reports', exist_ok=True)
@@ -1222,19 +974,18 @@ class ExperimentRunner:
             json.dump(results_dict, f, indent=2, default=str)
         print(f"\n✓ Results saved to results/reports/experiment_results.json")
         
-        # Generate visualizations (optional)
+        # Generate visualizations
         print("\nGenerating visualizations...")
-        viz_results = {
-            'centralized': centralized_results,
-            'federated_equal_weight': federated_results,
-            'trust_aware': trust_aware_results
-        }
-        if fedprox_results is not None:
-            viz_results['fedprox'] = fedprox_results
-        if median_results is not None:
-            viz_results['coordinate_median'] = median_results
-
-        print("Warning: visualization disabled (matplotlib import avoided on this system).")
+        save_all_visualizations(
+            client_info,
+            {
+                'centralized': centralized_results,
+                'federated_equal_weight': federated_results,
+                'trust_aware': trust_aware_results
+            },
+            output_dir='results/plots',
+            trust_manager=self.trust_manager if hasattr(self, 'trust_manager') else None
+        )
         
         return results_dict
 
